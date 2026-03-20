@@ -96,6 +96,20 @@ def load_parquet_to_bronze(
     """
     log.info(f"Reading parquet: {parquet_path}")
 
+    # ── Idempotency: delete existing rows for this month ──────
+    # If the task retries, we don't want duplicate rows.
+    # A trip_month-scoped delete before insert is the standard
+    # production pattern for monthly batch pipelines.
+    log.info(f"Deleting existing rows for trip_month={trip_month}")
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM raw_trips WHERE trip_month = %s", (trip_month,))
+        deleted = cur.rowcount
+        conn.commit()
+    if deleted > 0:
+        log.warning(
+            f"Deleted {deleted:,} existing rows for {trip_month} before re-insert"
+        )
+
     # TLC column name mapping — parquet uses camelCase
     column_map = {
         "VendorID": "vendor_id",

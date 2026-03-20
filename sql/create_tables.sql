@@ -76,3 +76,48 @@ CREATE TABLE IF NOT EXISTS pipeline_run_log (
 
     CONSTRAINT uq_pipeline_run UNIQUE (pipeline_run_id)
 );
+
+-- ── Silver: cleaned_trips ────────────────────────────────────
+-- Written by spark_transform task.
+-- Cleaned, validated, and enriched version of raw_trips.
+-- Derived columns added: trip_duration_min, speed_mph,
+-- is_airport_trip, tip_percentage.
+
+CREATE TABLE IF NOT EXISTS cleaned_trips (
+    id                      BIGSERIAL PRIMARY KEY,
+    vendor_id               INTEGER,
+    pickup_datetime         TIMESTAMPTZ,
+    dropoff_datetime        TIMESTAMPTZ,
+    passenger_count         SMALLINT,
+    trip_distance           NUMERIC(8, 2),
+    rate_code_id            SMALLINT,
+    store_and_fwd_flag      CHAR(1),
+    pu_location_id          INTEGER,
+    do_location_id          INTEGER,
+    payment_type            SMALLINT,
+    fare_amount             NUMERIC(8, 2),
+    extra                   NUMERIC(8, 2),
+    mta_tax                 NUMERIC(8, 2),
+    tip_amount              NUMERIC(8, 2),
+    tolls_amount            NUMERIC(8, 2),
+    improvement_surcharge   NUMERIC(8, 2),
+    total_amount            NUMERIC(8, 2),
+    congestion_surcharge    NUMERIC(8, 2),
+    airport_fee             NUMERIC(8, 2),
+    -- Derived columns added by spark_transform
+    trip_duration_min       NUMERIC(8, 2),
+    speed_mph               NUMERIC(8, 2),
+    is_airport_trip         BOOLEAN,
+    tip_percentage          NUMERIC(8, 2),
+    -- Pipeline metadata
+    trip_month              CHAR(7),
+    cleaned_at              TIMESTAMPTZ,
+    pipeline_run_id         VARCHAR(100)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_pickup_datetime
+    ON cleaned_trips (pickup_datetime);
+CREATE INDEX IF NOT EXISTS idx_cleaned_trip_month
+    ON cleaned_trips (trip_month);
+CREATE INDEX IF NOT EXISTS idx_cleaned_is_airport
+    ON cleaned_trips (is_airport_trip);

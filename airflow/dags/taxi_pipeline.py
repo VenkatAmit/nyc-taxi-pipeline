@@ -17,6 +17,7 @@ from airflow import DAG  # noqa: E402
 from airflow.operators.python import PythonOperator  # noqa: E402
 from ingest import ingest  # noqa: E402
 from load import load  # noqa: E402
+from spark_transform import spark_transform  # noqa: E402
 
 default_args = {
     "owner": "venkat-amit",
@@ -53,10 +54,15 @@ with DAG(
         trigger_rule="all_done",
     )
 
+    t_spark_transform = PythonOperator(
+        task_id="spark_transform",
+        python_callable=spark_transform,
+        provide_context=True,
+    )
+
     # Remaining tasks added in subsequent feature branches:
-    # t_spark_transform  -> feature/spark-transform
     # t_dbt_run          -> feature/dbt-models
     # t_dbt_test         -> feature/dbt-models
     # t_ge_validate      -> feature/great-expectations
 
-    t_ingest >> t_load
+    t_ingest >> t_spark_transform >> t_load
