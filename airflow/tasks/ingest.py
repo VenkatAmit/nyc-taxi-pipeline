@@ -187,10 +187,13 @@ def ingest(**context):
     run_id = context["run_id"]
     data_dir = os.environ.get("DATA_DIR", "/opt/airflow/data")
 
-    # Derive trip month from execution date
-    # @monthly DAG: execution_date is the start of the month being processed
-    execution_date = context["execution_date"]
-    trip_month = execution_date.strftime("%Y-%m")
+    # Derive trip month from data_interval_start
+    # For @monthly DAG this is the first day of the month being processed
+    # Falls back to logical_date if data_interval_start is not available
+    data_interval_start = context.get("data_interval_start") or context.get(
+        "logical_date"
+    )
+    trip_month = data_interval_start.strftime("%Y-%m")
 
     log.info(f"Starting ingest | run_id={run_id} | trip_month={trip_month}")
 

@@ -15,8 +15,6 @@ sys.path.insert(0, "/opt/airflow/tasks")
 
 from airflow import DAG  # noqa: E402
 from airflow.operators.python import PythonOperator  # noqa: E402
-
-# Task imports — added as each layer is built
 from ingest import ingest  # noqa: E402
 from load import load  # noqa: E402
 
@@ -48,24 +46,17 @@ with DAG(
         provide_context=True,
     )
 
-    # Remaining tasks added in subsequent feature branches:
-    # t_spark_transform  -> feature/spark-transform
-    # t_dbt_run          -> feature/dbt-models
-    # t_dbt_test         -> feature/dbt-models
-    # t_ge_validate      -> feature/great-expectations
-    # t_load             -> feature/core-pipeline (next commit)
-
-    t_ingest = PythonOperator(
-        task_id="ingest",
-        python_callable=ingest,
-        provide_context=True,
-    )
-
     t_load = PythonOperator(
         task_id="load",
         python_callable=load,
         provide_context=True,
         trigger_rule="all_done",
     )
+
+    # Remaining tasks added in subsequent feature branches:
+    # t_spark_transform  -> feature/spark-transform
+    # t_dbt_run          -> feature/dbt-models
+    # t_dbt_test         -> feature/dbt-models
+    # t_ge_validate      -> feature/great-expectations
 
     t_ingest >> t_load
