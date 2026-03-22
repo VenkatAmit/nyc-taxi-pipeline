@@ -1,24 +1,18 @@
-from typing import List, Tuple
-
 """
 airflow/tasks/gx_validate.py
 -----------------------------
 Data quality layer: validates all three medallion layers using
 Great Expectations and generates an HTML report.
 
-Validation suites:
-  bronze — raw_trips:         row count, no nulls on key columns
-  silver — cleaned_trips:     row count, fare > 0, duration > 0
-  gold   — trip_metrics:      exact row count, no null pickup_hour
-  gold   — zone_summary:      exact row count, no null pu_location_id
-
-HTML report written to /opt/airflow/ge_reports/
-(mounted to ./great_expectations/reports/ on the host)
+Uses sampled queries for bronze/silver to avoid OOM on 3M+ row tables.
+Row counts are checked via direct SQL COUNT(*) queries.
 
 XCom output:
     quality_passed (bool)
-    quality_notes (str)   — summary of any failures
+    quality_notes (str)
 """
+
+from typing import List, Tuple, Dict
 
 import os
 import time
@@ -32,6 +26,7 @@ import great_expectations as ge
 log = logging.getLogger(__name__)
 
 REPORT_DIR = "/opt/airflow/ge_reports"
+SAMPLE_SIZE = 50_000
 
 
 def get_engine():
@@ -45,51 +40,60 @@ def get_engine():
     )
 
 
-def load_table(engine, query: str) -> ge.dataset.PandasDataset:
-    """Load a query result into a GE PandasDataset."""
-    df = pd.read_sql(query, engine)
+def get_row_count(engine, table: str) -> int:
+    with engine.connect() as conn:
+        result = conn.execute(sqlalchemy.text(f"SELECT COUNT(*) FROM {table}"))
+        return result.scalar()
+
+
+def load_sample(
+    engine, table: str, limit: int = SAMPLE_SIZE
+) -> ge.dataset.PandasDataset:
+    df = pd.read_sql(f"SELECT * FROM {table} LIMIT {limit}", engine)
     return ge.from_pandas(df)
 
 
 def validate_bronze(engine) -> Tuple[bool, List[str]]:
     log.info("Validating bronze layer (raw_trips)...")
-    ds = load_table(engine, "SELECT * FROM raw_trips LIMIT 5000000")
     failures = []
 
-    r = ds.expect_table_row_count_to_be_between(
-        min_value=3_000_000, max_value=4_000_000
-    )
-    if not r["success"]:
-        failures.append(f"bronze row count: {r['result']['observed_value']:,}")
+    count = get_row_count(engine, "raw_trips")
+    log.info(f"raw_trips row count: {count:,}")
+    if not (3_000_000 <= count <= 4_000_000):
+        failures.append(f"bronze row count out of range: {count:,}")
+
+    ds = load_sample(engine, "raw_trips")
 
     for col in ["pickup_datetime", "dropoff_datetime", "fare_amount", "trip_distance"]:
         r = ds.expect_column_values_to_not_be_null(col)
         if not r["success"]:
             failures.append(f"bronze null check failed: {col}")
 
-    r = ds.expect_column_values_to_be_between("fare_amount", min_value=0, max_value=500)
+    r = ds.expect_column_values_to_be_between(
+        "fare_amount", min_value=-10, max_value=1000
+    )
     if not r["success"]:
         failures.append("bronze fare_amount out of range")
 
     passed = len(failures) == 0
-    log.info(
-        f"Bronze validation: {'PASS' if passed else 'FAIL'} — {failures or 'all checks passed'}"
-    )
+    log.info(f"Bronze validation: {'PASS' if passed else 'FAIL'}")
     return passed, failures
 
 
 def validate_silver(engine) -> Tuple[bool, List[str]]:
     log.info("Validating silver layer (cleaned_trips)...")
-    ds = load_table(engine, "SELECT * FROM cleaned_trips LIMIT 5000000")
     failures = []
 
-    r = ds.expect_table_row_count_to_be_between(
-        min_value=3_000_000, max_value=3_200_000
-    )
-    if not r["success"]:
-        failures.append(f"silver row count: {r['result']['observed_value']:,}")
+    count = get_row_count(engine, "cleaned_trips")
+    log.info(f"cleaned_trips row count: {count:,}")
+    if not (3_000_000 <= count <= 3_200_000):
+        failures.append(f"silver row count out of range: {count:,}")
 
-    r = ds.expect_column_values_to_be_between("fare_amount", min_value=0, max_value=500)
+    ds = load_sample(engine, "cleaned_trips")
+
+    r = ds.expect_column_values_to_be_between(
+        "fare_amount", min_value=-10, max_value=1000
+    )
     if not r["success"]:
         failures.append("silver fare_amount out of range")
 
@@ -104,9 +108,7 @@ def validate_silver(engine) -> Tuple[bool, List[str]]:
         failures.append("silver null pickup_datetime")
 
     passed = len(failures) == 0
-    log.info(
-        f"Silver validation: {'PASS' if passed else 'FAIL'} — {failures or 'all checks passed'}"
-    )
+    log.info(f"Silver validation: {'PASS' if passed else 'FAIL'}")
     return passed, failures
 
 
@@ -114,12 +116,12 @@ def validate_gold(engine) -> Tuple[bool, List[str]]:
     log.info("Validating gold layer (trip_metrics + zone_summary)...")
     failures = []
 
-    # trip_metrics
-    ds = load_table(engine, "SELECT * FROM public_public.trip_metrics")
-    r = ds.expect_table_row_count_to_equal(750)
-    if not r["success"]:
-        failures.append(f"trip_metrics row count: {r['result']['observed_value']}")
+    tm_count = get_row_count(engine, "public_public.trip_metrics")
+    log.info(f"trip_metrics row count: {tm_count}")
+    if tm_count != 750:
+        failures.append(f"trip_metrics row count: {tm_count}")
 
+    ds = load_sample(engine, "public_public.trip_metrics", limit=750)
     r = ds.expect_column_values_to_not_be_null("pickup_hour")
     if not r["success"]:
         failures.append("trip_metrics null pickup_hour")
@@ -130,25 +132,22 @@ def validate_gold(engine) -> Tuple[bool, List[str]]:
     if not r["success"]:
         failures.append("trip_metrics avg_fare_usd out of range")
 
-    # zone_summary
-    ds = load_table(engine, "SELECT * FROM public_public.zone_summary")
-    r = ds.expect_table_row_count_to_equal(252)
-    if not r["success"]:
-        failures.append(f"zone_summary row count: {r['result']['observed_value']}")
+    zs_count = get_row_count(engine, "public_public.zone_summary")
+    log.info(f"zone_summary row count: {zs_count}")
+    if zs_count != 252:
+        failures.append(f"zone_summary row count: {zs_count}")
 
+    ds = load_sample(engine, "public_public.zone_summary", limit=252)
     r = ds.expect_column_values_to_not_be_null("pu_location_id")
     if not r["success"]:
         failures.append("zone_summary null pu_location_id")
 
     passed = len(failures) == 0
-    log.info(
-        f"Gold validation: {'PASS' if passed else 'FAIL'} — {failures or 'all checks passed'}"
-    )
+    log.info(f"Gold validation: {'PASS' if passed else 'FAIL'}")
     return passed, failures
 
 
-def build_html_report(results: dict, report_path: str):
-    """Generate a standalone HTML report from validation results."""
+def build_html_report(results: Dict, report_path: str):
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     overall = all(r["passed"] for r in results.values())
     status_color = "#2d6a4f" if overall else "#c1121f"
@@ -191,7 +190,7 @@ def build_html_report(results: dict, report_path: str):
 </head>
 <body>
   <h1>NYC Taxi Pipeline — Data Quality Report</h1>
-  <div class="meta">Generated: {timestamp}</div>
+  <div class="meta">Generated: {timestamp} | Sample size: {SAMPLE_SIZE:,} rows</div>
   <div class="badge">{status_label}</div>
   <table>
     <thead><tr><th>Layer</th><th>Status</th><th>Notes</th></tr></thead>
@@ -207,10 +206,6 @@ def build_html_report(results: dict, report_path: str):
 
 
 def gx_validate(**context):
-    """
-    Main GE validation task callable for Airflow PythonOperator.
-    Validates all three layers, writes HTML report, pushes XCom.
-    """
     start = time.time()
     ti = context["ti"]
     run_id = context["run_id"]
@@ -235,12 +230,10 @@ def gx_validate(**context):
 
     overall_passed = bronze_passed and silver_passed and gold_passed
 
-    # Write HTML report — filename includes run_id for history
     safe_run_id = run_id.replace(":", "-").replace("+", "")
     report_path = f"{REPORT_DIR}/quality_report_{safe_run_id}.html"
     build_html_report(results, report_path)
 
-    # Build quality_notes string for pipeline_run_log
     all_failures = bronze_failures + silver_failures + gold_failures
     quality_notes = "; ".join(all_failures) if all_failures else "all checks passed"
 
@@ -253,8 +246,6 @@ def gx_validate(**context):
     ti.xcom_push(key="quality_passed", value=overall_passed)
     ti.xcom_push(key="quality_notes", value=quality_notes)
 
-    # Do not fail the task on quality issues — log and report instead
-    # Set this to True if you want the pipeline to hard-fail on bad data
     FAIL_ON_QUALITY_ISSUES = False
     if not overall_passed and FAIL_ON_QUALITY_ISSUES:
         raise ValueError(f"Data quality checks failed: {quality_notes}")

@@ -192,6 +192,28 @@ def write_silver(df, trip_month: str):
     jdbc_url = get_jdbc_url()
     props = get_jdbc_props()
 
+    # Idempotency: delete existing rows for this month before insert
+    import psycopg2
+
+    conn = psycopg2.connect(
+        host=os.environ["PIPELINE_DB_HOST"],
+        port=os.environ["PIPELINE_DB_PORT"],
+        dbname=os.environ["PIPELINE_DB_NAME"],
+        user=os.environ["PIPELINE_DB_USER"],
+        password=os.environ["PIPELINE_DB_PASSWORD"],
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM cleaned_trips WHERE trip_month = %s", (trip_month,)
+            )
+            deleted = cur.rowcount
+            conn.commit()
+        if deleted > 0:
+            log.warning(f"Deleted {deleted:,} existing silver rows for {trip_month}")
+    finally:
+        conn.close()
+
     # Add trip_month column
     df = df.withColumn("trip_month", F.lit(trip_month))
 
