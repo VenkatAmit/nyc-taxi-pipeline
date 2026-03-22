@@ -128,3 +128,49 @@ networks:
 volumes:
   airflow_db_data:
   pipeline_db_data:
+  superset_data:
+
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-supersetsecretkey}
+    ports:
+      - "8088:8088"
+    volumes:
+      - superset_data:/app/superset_home
+    networks:
+      - taxi_net
+    depends_on:
+      pipeline_db:
+        condition: service_healthy
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin
+          --username admin --firstname Admin --lastname User
+          --email admin@example.com --password admin || true &&
+        superset init &&
+        superset run -p 8088 --with-threads --reload --debugger
+      "
+
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    container_name: jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./airflow/data/delta:/home/jovyan/delta
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      PIPELINE_DB_HOST: ${PIPELINE_DB_HOST}
+      PIPELINE_DB_PORT: ${PIPELINE_DB_PORT}
+      PIPELINE_DB_NAME: ${PIPELINE_DB_NAME}
+      PIPELINE_DB_USER: ${PIPELINE_DB_USER}
+      PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
+    networks:
+      - taxi_net
+    depends_on:
+      pipeline_db:
+        condition: service_healthy

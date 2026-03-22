@@ -2,7 +2,7 @@
 airflow/dags/taxi_pipeline.py
 ------------------------------
 NYC Taxi batch pipeline — medallion architecture
-bronze (raw_trips) -> silver (cleaned_trips) -> gold (dbt) -> validation (GE)
+bronze (Delta) -> silver (cleaned_trips) -> gold (dbt) -> validation (GE)
 
 Schedule: @monthly — processes one month of TLC data per run
 Backfill-ready: each run is parameterised by data_interval_start
@@ -18,6 +18,7 @@ from airflow.operators.python import PythonOperator  # noqa: E402
 from ingest import ingest  # noqa: E402
 from load import load  # noqa: E402
 from spark_transform import spark_transform  # noqa: E402
+from delta_optimize import delta_optimize  # noqa: E402
 from dbt_run import dbt_run  # noqa: E402
 from gx_validate import gx_validate  # noqa: E402
 
@@ -34,14 +35,15 @@ with DAG(
     dag_id="nyc_taxi_pipeline",
     description=(
         "NYC Taxi batch pipeline: "
-        "ingest TLC parquet -> PySpark transform -> dbt models -> GE validation"
+        "ingest TLC parquet -> Delta bronze -> PySpark silver "
+        "-> delta_optimize -> dbt gold -> GE validation"
     ),
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
     schedule_interval="@monthly",
     catchup=False,
     max_active_runs=1,
-    tags=["nyc-taxi", "medallion", "pyspark", "dbt", "great-expectations"],
+    tags=["nyc-taxi", "medallion", "pyspark", "dbt", "great-expectations", "delta"],
 ) as dag:
     t_ingest = PythonOperator(
         task_id="ingest",
@@ -52,6 +54,12 @@ with DAG(
     t_spark_transform = PythonOperator(
         task_id="spark_transform",
         python_callable=spark_transform,
+        provide_context=True,
+    )
+
+    t_delta_optimize = PythonOperator(
+        task_id="delta_optimize",
+        python_callable=delta_optimize,
         provide_context=True,
     )
 
@@ -74,4 +82,11 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    t_ingest >> t_spark_transform >> t_dbt_run >> t_ge_validate >> t_load
+    (
+        t_ingest
+        >> t_spark_transform
+        >> t_delta_optimize
+        >> t_dbt_run
+        >> t_ge_validate
+        >> t_load
+    )

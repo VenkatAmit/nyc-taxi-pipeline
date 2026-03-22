@@ -1,11 +1,12 @@
 """
 airflow/tasks/gx_validate.py
 -----------------------------
-Data quality layer: validates all three medallion layers using
-Great Expectations and generates an HTML report.
+Data quality layer: validates all three medallion layers.
 
-Uses sampled queries for bronze/silver to avoid OOM on 3M+ row tables.
-Row counts are checked via direct SQL COUNT(*) queries.
+Bronze: sampled from Delta Lake via PySpark (not Postgres).
+Silver: sampled from Postgres cleaned_trips.
+Gold:   row counts from agg_hourly_metrics + agg_zone_summary
+        (updated from old trip_metrics / zone_summary names).
 
 XCom output:
     quality_passed (bool)
@@ -27,6 +28,9 @@ log = logging.getLogger(__name__)
 
 REPORT_DIR = "/opt/airflow/ge_reports"
 SAMPLE_SIZE = 50_000
+DELTA_BRONZE_PATH = os.environ.get(
+    "DELTA_BRONZE_PATH", "/opt/airflow/data/delta/bronze/yellow_tripdata"
+)
 
 
 def get_engine():
@@ -53,27 +57,72 @@ def load_sample(
     return ge.from_pandas(df)
 
 
-def validate_bronze(engine) -> Tuple[bool, List[str]]:
-    log.info("Validating bronze layer (raw_trips)...")
+def get_delta_spark_session():
+    from pyspark.sql import SparkSession
+
+    return (
+        SparkSession.builder.master("local[*]")
+        .appName("nyc_taxi_gx_bronze")
+        .config("spark.driver.memory", "2g")
+        .config(
+            "spark.jars.packages",
+            "io.delta:delta-spark_2.12:3.1.0",
+        )
+        .config(
+            "spark.sql.extensions",
+            "io.delta.sql.DeltaSparkSessionExtension",
+        )
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
+        .getOrCreate()
+    )
+
+
+def validate_bronze(trip_month: str) -> Tuple[bool, List[str]]:
+    """
+    Sample bronze directly from Delta — avoids Postgres entirely
+    for the raw layer now that bronze lives in Delta Lake.
+    """
+    log.info("Validating bronze layer (Delta)...")
     failures = []
 
-    count = get_row_count(engine, "raw_trips")
-    log.info(f"raw_trips row count: {count:,}")
-    if not (3_000_000 <= count <= 4_000_000):
-        failures.append(f"bronze row count out of range: {count:,}")
+    spark = get_delta_spark_session()
+    try:
+        df = (
+            spark.read.format("delta")
+            .load(DELTA_BRONZE_PATH)
+            .filter(f"trip_month = '{trip_month}'")
+        )
+        count = df.count()
+        log.info(f"Delta bronze row count for {trip_month}: {count:,}")
 
-    ds = load_sample(engine, "raw_trips")
+        if not (3_000_000 <= count <= 4_000_000):
+            failures.append(f"bronze row count out of range: {count:,}")
 
-    for col in ["pickup_datetime", "dropoff_datetime", "fare_amount", "trip_distance"]:
-        r = ds.expect_column_values_to_not_be_null(col)
+        # Sample for column checks
+        sample_df = df.limit(SAMPLE_SIZE).toPandas()
+        ds = ge.from_pandas(sample_df)
+
+        for col in [
+            "tpep_pickup_datetime",
+            "tpep_dropoff_datetime",
+            "fare_amount",
+            "trip_distance",
+        ]:
+            r = ds.expect_column_values_to_not_be_null(col)
+            if not r["success"]:
+                failures.append(f"bronze null check failed: {col}")
+
+        r = ds.expect_column_values_to_be_between(
+            "fare_amount", min_value=-1500, max_value=5000
+        )
         if not r["success"]:
-            failures.append(f"bronze null check failed: {col}")
+            failures.append("bronze fare_amount out of range")
 
-    r = ds.expect_column_values_to_be_between(
-        "fare_amount", min_value=-1500, max_value=5000
-    )
-    if not r["success"]:
-        failures.append("bronze fare_amount out of range")
+    finally:
+        spark.stop()
 
     passed = len(failures) == 0
     log.info(f"Bronze validation: {'PASS' if passed else 'FAIL'}")
@@ -113,34 +162,38 @@ def validate_silver(engine) -> Tuple[bool, List[str]]:
 
 
 def validate_gold(engine) -> Tuple[bool, List[str]]:
-    log.info("Validating gold layer (trip_metrics + zone_summary)...")
+    """
+    Validate gold layer — references updated to match the new
+    star schema model names (agg_hourly_metrics, agg_zone_summary).
+    """
+    log.info("Validating gold layer (agg_hourly_metrics + agg_zone_summary)...")
     failures = []
 
-    tm_count = get_row_count(engine, "public_public.trip_metrics")
-    log.info(f"trip_metrics row count: {tm_count}")
-    if not (700 <= tm_count <= 800):
-        failures.append(f"trip_metrics row count: {tm_count}")
+    hm_count = get_row_count(engine, "public.agg_hourly_metrics")
+    log.info(f"agg_hourly_metrics row count: {hm_count}")
+    if not (5_000 <= hm_count <= 6_000):
+        failures.append(f"agg_hourly_metrics row count: {hm_count}")
 
-    ds = load_sample(engine, "public_public.trip_metrics", limit=750)
-    r = ds.expect_column_values_to_not_be_null("pickup_hour")
+    ds = load_sample(engine, "public.agg_hourly_metrics", limit=5511)
+    r = ds.expect_column_values_to_not_be_null("time_of_day_bucket")
     if not r["success"]:
-        failures.append("trip_metrics null pickup_hour")
+        failures.append("agg_hourly_metrics null time_of_day_bucket")
 
     r = ds.expect_column_values_to_be_between(
-        "avg_fare_usd", min_value=0, max_value=500
+        "avg_fare_amount", min_value=0, max_value=500
     )
     if not r["success"]:
-        failures.append("trip_metrics avg_fare_usd out of range")
+        failures.append("agg_hourly_metrics avg_fare_amount out of range")
 
-    zs_count = get_row_count(engine, "public_public.zone_summary")
-    log.info(f"zone_summary row count: {zs_count}")
+    zs_count = get_row_count(engine, "public.agg_zone_summary")
+    log.info(f"agg_zone_summary row count: {zs_count}")
     if zs_count != 252:
-        failures.append(f"zone_summary row count: {zs_count}")
+        failures.append(f"agg_zone_summary row count: {zs_count}")
 
-    ds = load_sample(engine, "public_public.zone_summary", limit=252)
-    r = ds.expect_column_values_to_not_be_null("pu_location_id")
+    ds = load_sample(engine, "public.agg_zone_summary", limit=252)
+    r = ds.expect_column_values_to_not_be_null("zone_key")
     if not r["success"]:
-        failures.append("zone_summary null pu_location_id")
+        failures.append("agg_zone_summary null zone_key")
 
     passed = len(failures) == 0
     log.info(f"Gold validation: {'PASS' if passed else 'FAIL'}")
@@ -210,19 +263,23 @@ def gx_validate(**context):
     ti = context["ti"]
     run_id = context["run_id"]
 
+    trip_month = ti.xcom_pull(task_ids="ingest", key="trip_month")
+    if not trip_month:
+        trip_month = context.get("data_interval_start").strftime("%Y-%m")
+
     engine = get_engine()
 
-    bronze_passed, bronze_failures = validate_bronze(engine)
+    bronze_passed, bronze_failures = validate_bronze(trip_month)
     silver_passed, silver_failures = validate_silver(engine)
     gold_passed, gold_failures = validate_gold(engine)
 
     results = {
-        "bronze (raw_trips)": {"passed": bronze_passed, "failures": bronze_failures},
+        "bronze (Delta)": {"passed": bronze_passed, "failures": bronze_failures},
         "silver (cleaned_trips)": {
             "passed": silver_passed,
             "failures": silver_failures,
         },
-        "gold (trip_metrics + zone_summary)": {
+        "gold (agg_hourly_metrics + agg_zone_summary)": {
             "passed": gold_passed,
             "failures": gold_failures,
         },
