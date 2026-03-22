@@ -33,3 +33,5 @@ great_expectations/uncommitted/
 dbt/profiles.yml
 dbt/target/
 dbt/dbt_packages/
+dbt/.user.yml
+logs/
