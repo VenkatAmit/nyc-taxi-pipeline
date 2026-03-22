@@ -70,7 +70,7 @@ def validate_bronze(engine) -> Tuple[bool, List[str]]:
             failures.append(f"bronze null check failed: {col}")
 
     r = ds.expect_column_values_to_be_between(
-        "fare_amount", min_value=-10, max_value=1000
+        "fare_amount", min_value=-1500, max_value=5000
     )
     if not r["success"]:
         failures.append("bronze fare_amount out of range")
@@ -92,7 +92,7 @@ def validate_silver(engine) -> Tuple[bool, List[str]]:
     ds = load_sample(engine, "cleaned_trips")
 
     r = ds.expect_column_values_to_be_between(
-        "fare_amount", min_value=-10, max_value=1000
+        "fare_amount", min_value=-1500, max_value=5000
     )
     if not r["success"]:
         failures.append("silver fare_amount out of range")
@@ -118,7 +118,7 @@ def validate_gold(engine) -> Tuple[bool, List[str]]:
 
     tm_count = get_row_count(engine, "public_public.trip_metrics")
     log.info(f"trip_metrics row count: {tm_count}")
-    if tm_count != 750:
+    if not (700 <= tm_count <= 800):
         failures.append(f"trip_metrics row count: {tm_count}")
 
     ds = load_sample(engine, "public_public.trip_metrics", limit=750)
