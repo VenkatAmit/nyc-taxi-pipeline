@@ -2,7 +2,7 @@
 airflow/dags/taxi_pipeline.py
 ------------------------------
 NYC Taxi batch pipeline — medallion architecture
-bronze (raw_trips) -> silver (dbt) -> gold (dbt)
+bronze (raw_trips) -> silver (cleaned_trips) -> gold (dbt) -> validation (GE)
 
 Schedule: @monthly — processes one month of TLC data per run
 Backfill-ready: each run is parameterised by data_interval_start
@@ -18,6 +18,8 @@ from airflow.operators.python import PythonOperator  # noqa: E402
 from ingest import ingest  # noqa: E402
 from load import load  # noqa: E402
 from spark_transform import spark_transform  # noqa: E402
+from dbt_run import dbt_run  # noqa: E402
+from gx_validate import gx_validate  # noqa: E402
 
 default_args = {
     "owner": "venkat-amit",
@@ -39,11 +41,29 @@ with DAG(
     schedule_interval="@monthly",
     catchup=False,
     max_active_runs=1,
-    tags=["nyc-taxi", "medallion", "pyspark", "dbt"],
+    tags=["nyc-taxi", "medallion", "pyspark", "dbt", "great-expectations"],
 ) as dag:
     t_ingest = PythonOperator(
         task_id="ingest",
         python_callable=ingest,
+        provide_context=True,
+    )
+
+    t_spark_transform = PythonOperator(
+        task_id="spark_transform",
+        python_callable=spark_transform,
+        provide_context=True,
+    )
+
+    t_dbt_run = PythonOperator(
+        task_id="dbt_run",
+        python_callable=dbt_run,
+        provide_context=True,
+    )
+
+    t_ge_validate = PythonOperator(
+        task_id="ge_validate",
+        python_callable=gx_validate,
         provide_context=True,
     )
 
@@ -54,15 +74,4 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    t_spark_transform = PythonOperator(
-        task_id="spark_transform",
-        python_callable=spark_transform,
-        provide_context=True,
-    )
-
-    # Remaining tasks added in subsequent feature branches:
-    # t_dbt_run          -> feature/dbt-models
-    # t_dbt_test         -> feature/dbt-models
-    # t_ge_validate      -> feature/great-expectations
-
-    t_ingest >> t_spark_transform >> t_load
+    t_ingest >> t_spark_transform >> t_dbt_run >> t_ge_validate >> t_load
