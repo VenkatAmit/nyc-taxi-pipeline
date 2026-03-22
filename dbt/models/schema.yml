@@ -1,38 +1,80 @@
 version: 2
 
-sources:
-  - name: public
-    database: nyc_taxi
-    schema: public
-    tables:
-      - name: cleaned_trips
-        description: Silver layer written by spark_transform
-        columns:
-          - name: id
-            tests:
-              - not_null
-          - name: pickup_datetime
-            tests:
-              - not_null
-          - name: fare_amount
-            tests:
-              - not_null
-
 models:
-  - name: trip_metrics
-    description: Hourly trip aggregations
+
+  - name: dim_date
+    description: "Hourly date dimension derived from cleaned_trips pickup timestamps."
     columns:
-      - name: pickup_hour
+      - name: date_key
+        description: "Surrogate key in YYYYMMDDHH format e.g. 2024010114"
+        tests:
+          - unique
+          - not_null
+      - name: trip_date
+        tests:
+          - not_null
+      - name: is_weekend
+        tests:
+          - not_null
+
+  - name: dim_zone
+    description: "NYC taxi zone dimension from TLC static lookup. 265 zones."
+    columns:
+      - name: zone_key
+        tests:
+          - unique
+          - not_null
+      - name: borough
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island', 'EWR', 'Unknown', 'N/A']
+
+  - name: dim_vendor
+    description: "TLC vendor dimension. CMT (1), VeriFone (2), Unknown fallback (0)."
+    columns:
+      - name: vendor_key
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_trips
+    description: "Grain: one row per cleaned trip from silver layer. ~3.1M rows."
+    columns:
+      - name: trip_key
+        tests:
+          - unique
+          - not_null
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: pickup_zone_key
+        tests:
+          - not_null
+      - name: fare_amount
+        tests:
+          - not_null
+      - name: trip_distance
+        tests:
+          - not_null
+
+  - name: agg_hourly_metrics
+    description: "Hourly trip aggregates by pickup borough. Replaces trip_metrics."
+    columns:
+      - name: date_key
         tests:
           - not_null
       - name: trip_count
         tests:
           - not_null
 
-  - name: zone_summary
-    description: Per zone aggregations
+  - name: agg_zone_summary
+    description: "Per-zone per-month aggregates. Replaces zone_summary."
     columns:
-      - name: pu_location_id
+      - name: pickup_zone_key
         tests:
           - not_null
       - name: trip_count

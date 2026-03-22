@@ -1,0 +1,57 @@
+{{ config(materialized='table') }}
+
+WITH trips AS (
+    SELECT * FROM {{ source('silver', 'cleaned_trips') }}
+),
+
+date_dim AS (
+    SELECT * FROM {{ ref('dim_date') }}
+),
+
+zone_dim AS (
+    SELECT * FROM {{ ref('dim_zone') }}
+),
+
+vendor_dim AS (
+    SELECT * FROM {{ ref('dim_vendor') }}
+)
+
+SELECT
+    t.trip_month,
+    t.trip_distance,
+    t.fare_amount,
+    t.tip_amount,
+    t.total_amount,
+    t.passenger_count,
+    COALESCE(d.date_key, -1) AS date_key,
+    COALESCE(pz.zone_key, -1) AS pickup_zone_key,
+    COALESCE(dz.zone_key, -1) AS dropoff_zone_key,
+    COALESCE(v.vendor_key, 0) AS vendor_key,
+    (
+        EXTRACT(EPOCH FROM t.dropoff_datetime - t.pickup_datetime) -- noqa: RF02
+    ) / 60.0 AS trip_duration_min,
+    CASE
+        WHEN t.trip_distance > 0
+            THEN ROUND((t.fare_amount / t.trip_distance)::NUMERIC, 2)
+    END AS fare_per_mile,
+    CASE
+        WHEN t.fare_amount > 0
+            THEN ROUND((t.tip_amount / t.fare_amount * 100)::NUMERIC, 2)
+        ELSE 0
+    END AS tip_pct,
+    ROW_NUMBER() OVER (
+        ORDER BY t.pickup_datetime, t.pu_location_id
+    ) AS trip_key
+
+FROM trips AS t
+
+LEFT JOIN date_dim AS d
+    ON (
+        TO_CHAR(t.pickup_datetime, 'YYYYMMDD')
+        || LPAD(EXTRACT(HOUR FROM t.pickup_datetime)::TEXT, 2, '0')
+    )::BIGINT = d.date_key
+
+LEFT JOIN zone_dim AS pz ON t.pu_location_id = pz.location_id
+LEFT JOIN zone_dim AS dz ON t.do_location_id = dz.location_id
+
+LEFT JOIN vendor_dim AS v ON t.vendor_id::TEXT = v.vendor_id

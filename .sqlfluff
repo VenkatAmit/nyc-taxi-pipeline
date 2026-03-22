@@ -1,3 +1,11 @@
 [sqlfluff]
 dialect = postgres
 templater = jinja
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+ignore_words = dow,epoch,hour,day,month,year,minute,second,timezone,timezone_hour,timezone_minute
+
+[sqlfluff:rules:capitalisation.identifiers]
+capitalisation_policy = lower
+ignore_words = dow,epoch,hour,day,month,year,minute,second,timezone,timezone_hour,timezone_minute
