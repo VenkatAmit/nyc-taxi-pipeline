@@ -35,7 +35,7 @@ def get_spark_session():
         .config("spark.driver.memory", "2g")
         .config(
             "spark.jars.packages",
-            "io.delta:delta-spark_2.12:3.1.0",
+            "io.delta:delta-core_2.12:2.3.0",
         )
         .config(
             "spark.sql.extensions",

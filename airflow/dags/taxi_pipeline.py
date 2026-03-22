@@ -40,45 +40,40 @@ with DAG(
     ),
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
-    schedule_interval="@monthly",
-    catchup=False,
+    end_date=datetime(2025, 12, 1),
+    schedule="@monthly",
+    catchup=True,
     max_active_runs=1,
     tags=["nyc-taxi", "medallion", "pyspark", "dbt", "great-expectations", "delta"],
 ) as dag:
     t_ingest = PythonOperator(
         task_id="ingest",
         python_callable=ingest,
-        provide_context=True,
     )
 
     t_spark_transform = PythonOperator(
         task_id="spark_transform",
         python_callable=spark_transform,
-        provide_context=True,
     )
 
     t_delta_optimize = PythonOperator(
         task_id="delta_optimize",
         python_callable=delta_optimize,
-        provide_context=True,
     )
 
     t_dbt_run = PythonOperator(
         task_id="dbt_run",
         python_callable=dbt_run,
-        provide_context=True,
     )
 
     t_ge_validate = PythonOperator(
         task_id="ge_validate",
         python_callable=gx_validate,
-        provide_context=True,
     )
 
     t_load = PythonOperator(
         task_id="load",
         python_callable=load,
-        provide_context=True,
         trigger_rule="all_done",
     )
 

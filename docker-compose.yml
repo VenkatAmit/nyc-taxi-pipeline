@@ -1,4 +1,3 @@
-version: '3.8'
 
 x-airflow-common:
   &airflow-common
@@ -121,15 +120,6 @@ services:
     networks:
       - taxi_net
 
-networks:
-  taxi_net:
-    driver: bridge
-
-volumes:
-  airflow_db_data:
-  pipeline_db_data:
-  superset_data:
-
   superset:
     image: apache/superset:latest
     container_name: superset
@@ -174,3 +164,12 @@ volumes:
     depends_on:
       pipeline_db:
         condition: service_healthy
+
+networks:
+  taxi_net:
+    driver: bridge
+
+volumes:
+  airflow_db_data:
+  pipeline_db_data:
+  superset_data:

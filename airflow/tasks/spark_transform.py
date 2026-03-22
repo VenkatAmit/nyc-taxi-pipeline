@@ -36,14 +36,14 @@ def get_spark_session():
     return (
         SparkSession.builder.master("local[*]")
         .appName("nyc_taxi_silver")
-        .config("spark.driver.memory", "3g")
+        .config("spark.driver.memory", "2g")
         .config("spark.driver.maxResultSize", "2g")
         .config("spark.network.timeout", "800s")
         .config("spark.executor.heartbeatInterval", "60s")
         .config("spark.sql.shuffle.partitions", "8")
         .config(
             "spark.jars.packages",
-            "io.delta:delta-spark_2.12:3.1.0,org.postgresql:postgresql:42.6.0",
+            "io.delta:delta-core_2.12:2.3.0,org.postgresql:postgresql:42.6.0",
         )
         .config(
             "spark.sql.extensions",

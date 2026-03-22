@@ -28,7 +28,7 @@ PostgreSQL + Delta Lake (medallion schema)
 
 ## Setup
 
-Coming soon — see branch `feature/core-pipeline` for progress.
+Run `docker compose up -d` — the DAG auto-backfills Jan 2024 → Nov 2025 (23 runs, sequential, no manual triggers needed).
 
 ## Branches
 
@@ -38,4 +38,4 @@ Coming soon — see branch `feature/core-pipeline` for progress.
 | feature/spark-transform | planned | PySpark transform layer |
 | feature/dbt-models | planned | SQL models + data tests |
 | feature/great-expectations | planned | HTML data quality reports |
-| feature/delta-lake | planned | ACID storage + time travel |
+| feature/delta-lake | merged | Delta bronze, star schema gold, catchup backfill |
