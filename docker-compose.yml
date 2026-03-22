@@ -24,6 +24,8 @@ x-airflow-common:
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
     - ./airflow/data:/opt/airflow/data
+    - ./dbt:/opt/airflow/dbt
+    - ./great_expectations/reports:/opt/airflow/ge_reports
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     airflow_db:

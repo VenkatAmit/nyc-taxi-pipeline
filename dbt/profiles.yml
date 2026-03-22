@@ -1,0 +1,21 @@
+nyc_taxi:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      port: 5433
+      user: pipeline
+      password: pipeline123
+      dbname: nyc_taxi
+      schema: public
+      threads: 4
+    docker:
+      type: postgres
+      host: pipeline_db
+      port: 5432
+      user: pipeline
+      password: pipeline123
+      dbname: nyc_taxi
+      schema: public
+      threads: 4
