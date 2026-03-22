@@ -16,6 +16,7 @@ import os
 import time
 import logging
 import subprocess
+from typing import List, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ DBT_PROFILES_DIR = "/opt/airflow/dbt"
 DBT_TARGET = "docker"
 
 
-def _run_dbt_command(command: list[str]) -> tuple[int, str, str]:
+def _run_dbt_command(command: List[str]) -> Tuple[int, str, str]:
     """Run a dbt command, return (returncode, stdout, stderr)."""
     env = os.environ.copy()
     result = subprocess.run(
@@ -64,7 +65,6 @@ def dbt_run(**context):
     if rc != 0:
         raise RuntimeError(f"dbt run failed with exit code {rc}:\n{stderr}")
 
-    # Parse pass count from output — "Completed successfully" line
     models_passed = stdout.count("OK created")
     log.info(f"dbt run complete — {models_passed} models passed")
 

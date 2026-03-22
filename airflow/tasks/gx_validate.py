@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 """
 airflow/tasks/gx_validate.py
 -----------------------------
@@ -49,7 +51,7 @@ def load_table(engine, query: str) -> ge.dataset.PandasDataset:
     return ge.from_pandas(df)
 
 
-def validate_bronze(engine) -> tuple[bool, list[str]]:
+def validate_bronze(engine) -> Tuple[bool, List[str]]:
     log.info("Validating bronze layer (raw_trips)...")
     ds = load_table(engine, "SELECT * FROM raw_trips LIMIT 5000000")
     failures = []
@@ -76,7 +78,7 @@ def validate_bronze(engine) -> tuple[bool, list[str]]:
     return passed, failures
 
 
-def validate_silver(engine) -> tuple[bool, list[str]]:
+def validate_silver(engine) -> Tuple[bool, List[str]]:
     log.info("Validating silver layer (cleaned_trips)...")
     ds = load_table(engine, "SELECT * FROM cleaned_trips LIMIT 5000000")
     failures = []
@@ -108,7 +110,7 @@ def validate_silver(engine) -> tuple[bool, list[str]]:
     return passed, failures
 
 
-def validate_gold(engine) -> tuple[bool, list[str]]:
+def validate_gold(engine) -> Tuple[bool, List[str]]:
     log.info("Validating gold layer (trip_metrics + zone_summary)...")
     failures = []
 
