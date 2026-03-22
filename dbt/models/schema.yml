@@ -1,0 +1,40 @@
+version: 2
+
+sources:
+  - name: public
+    database: nyc_taxi
+    schema: public
+    tables:
+      - name: cleaned_trips
+        description: Silver layer written by spark_transform
+        columns:
+          - name: id
+            tests:
+              - not_null
+          - name: pickup_datetime
+            tests:
+              - not_null
+          - name: fare_amount
+            tests:
+              - not_null
+
+models:
+  - name: trip_metrics
+    description: Hourly trip aggregations
+    columns:
+      - name: pickup_hour
+        tests:
+          - not_null
+      - name: trip_count
+        tests:
+          - not_null
+
+  - name: zone_summary
+    description: Per zone aggregations
+    columns:
+      - name: pu_location_id
+        tests:
+          - not_null
+      - name: trip_count
+        tests:
+          - not_null
