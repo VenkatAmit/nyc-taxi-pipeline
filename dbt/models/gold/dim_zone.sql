@@ -1,8 +1,7 @@
 {{ config(materialized='table') }}
 
 SELECT
-    locationid AS zone_key,
-    locationid AS location_id,
+    location_id AS zone_key,
     TRIM(zone) AS zone_name,
     TRIM(borough) AS borough,
     TRIM(service_zone) AS service_zone,
