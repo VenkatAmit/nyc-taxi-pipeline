@@ -122,7 +122,7 @@ services:
   airflow_scheduler:
     <<: *airflow-common
     container_name: airflow_scheduler
-    mem_limit: 1g
+    mem_limit: 4g
     command: scheduler
     restart: unless-stopped
     depends_on:
