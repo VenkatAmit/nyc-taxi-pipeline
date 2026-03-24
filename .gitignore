@@ -8,31 +8,24 @@ airflow/data/
 *.delta
 *.csv
 *.zip
-
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
-
 # dbt
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
-
 # Airflow
 airflow/logs/
-
 # OS
 .DS_Store
 *.swp
-
 # Great Expectations
 great_expectations/uncommitted/
 dbt/profiles.yml
-dbt/target/
-dbt/dbt_packages/
 dbt/.user.yml
 logs/
 great_expectations/reports/*.html
