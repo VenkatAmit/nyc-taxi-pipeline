@@ -47,6 +47,29 @@ def dbt_run(**context):
     start = time.time()
     ti = context["ti"]
 
+    trip_month = ti.xcom_pull(task_ids="ingest", key="trip_month")
+    if not trip_month:
+        trip_month = context.get("data_interval_start").strftime("%Y-%m")
+
+    # ── dbt seed ──────────────────────────────────────────────
+    log.info("Running dbt seed...")
+    rc, stdout, stderr = _run_dbt_command(
+        [
+            "dbt",
+            "seed",
+            "--profiles-dir",
+            DBT_PROFILES_DIR,
+            "--target",
+            DBT_TARGET,
+        ]
+    )
+    log.info(f"dbt seed stdout:\n{stdout}")
+    if stderr:
+        log.warning(f"dbt seed stderr:\n{stderr}")
+    if rc != 0:
+        raise RuntimeError(f"dbt seed failed with exit code {rc}:\n{stderr}")
+    log.info("dbt seed complete")
+
     # ── dbt run ───────────────────────────────────────────────
     log.info("Running dbt run...")
     rc, stdout, stderr = _run_dbt_command(
@@ -57,6 +80,8 @@ def dbt_run(**context):
             DBT_PROFILES_DIR,
             "--target",
             DBT_TARGET,
+            "--vars",
+            f'{{"trip_month": "{trip_month}"}}',
         ]
     )
     log.info(f"dbt run stdout:\n{stdout}")
