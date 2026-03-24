@@ -29,6 +29,7 @@ default_args = {
     "email_on_retry": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
+    "execution_timeout": timedelta(hours=2),
 }
 
 with DAG(
@@ -66,8 +67,8 @@ with DAG(
         python_callable=dbt_run,
     )
 
-    t_ge_validate = PythonOperator(
-        task_id="ge_validate",
+    t_gx_validate = PythonOperator(
+        task_id="gx_validate",
         python_callable=gx_validate,
     )
 
@@ -82,6 +83,6 @@ with DAG(
         >> t_spark_transform
         >> t_delta_optimize
         >> t_dbt_run
-        >> t_ge_validate
+        >> t_gx_validate
         >> t_load
     )
