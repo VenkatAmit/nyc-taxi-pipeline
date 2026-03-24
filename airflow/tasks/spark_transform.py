@@ -278,7 +278,7 @@ def spark_transform(**context):
         df.unpersist()
         log.info("Cache released")
     finally:
-        spark.stop()
+        spark.catalog.clearCache()
         log.info("Spark session stopped")
 
     duration = round(time.time() - start, 2)
