@@ -21,6 +21,11 @@ RUN pip install --no-cache-dir \
     pandas==1.5.3 \
     pyarrow==14.0.1
 
+# Download PostgreSQL JDBC driver for Spark JDBC writes
+RUN mkdir -p /opt/spark/jars && \
+    curl -L https://jdbc.postgresql.org/download/postgresql-42.7.3.jar \
+         -o /opt/spark/jars/postgresql-42.7.3.jar
+
 RUN python - << 'PYEOF'
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession

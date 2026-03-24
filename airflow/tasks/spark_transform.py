@@ -42,9 +42,9 @@ def get_spark_session():
         .config("spark.network.timeout", "800s")
         .config("spark.executor.heartbeatInterval", "60s")
         .config("spark.sql.shuffle.partitions", "8")
+        .config("spark.driver.extraClassPath", "/opt/spark/jars/postgresql-42.7.3.jar")
         .config(
-            "spark.jars.packages",
-            "org.postgresql:postgresql:42.6.0",
+            "spark.executor.extraClassPath", "/opt/spark/jars/postgresql-42.7.3.jar"
         )
         .config(
             "spark.sql.extensions",
