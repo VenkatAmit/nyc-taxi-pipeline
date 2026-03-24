@@ -58,8 +58,8 @@ def load(**context):
     spark_duration = ti.xcom_pull(task_ids="spark_transform", key="spark_duration_sec")
     rows_transformed = ti.xcom_pull(task_ids="spark_transform", key="rows_transformed")
     dbt_duration = ti.xcom_pull(task_ids="dbt_run", key="dbt_duration_sec")
-    quality_passed = ti.xcom_pull(task_ids="ge_validate", key="quality_passed")
-    quality_notes = ti.xcom_pull(task_ids="ge_validate", key="quality_notes")
+    quality_passed = ti.xcom_pull(task_ids="gx_validate", key="quality_passed")
+    quality_notes = ti.xcom_pull(task_ids="gx_validate", key="quality_notes")
 
     run_completed_at = datetime.now(timezone.utc)
     # Total duration from DAG start
@@ -151,4 +151,5 @@ def load(**context):
     finally:
         conn.close()
 
+    ti.xcom_push(key="load_completed_at", value=run_completed_at.isoformat())
     return run_id
