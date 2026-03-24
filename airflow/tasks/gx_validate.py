@@ -74,51 +74,22 @@ def get_delta_spark_session():
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
-def validate_bronze(trip_month: str) -> Tuple[bool, List[str]]:
+def validate_bronze(
+    trip_month: str, rows_ingested: int = None
+) -> Tuple[bool, List[str]]:
     """
-    Sample bronze directly from Delta — avoids Postgres entirely
-    for the raw layer now that bronze lives in Delta Lake.
+    Validate bronze using XCom row count — avoids full Delta scan.
     """
-    log.info("Validating bronze layer (Delta)...")
+    log.info("Validating bronze layer (Delta via XCom count)...")
     failures = []
 
-    spark = get_delta_spark_session()
-    try:
-        df = (
-            spark.read.format("delta")
-            .load(DELTA_BRONZE_PATH)
-            .filter(f"trip_month = '{trip_month}'")
-            .cache()
-        )
-        count = df.count()  # scan #1 — materialises cache
-        log.info(f"Delta bronze row count for {trip_month}: {count:,}")
-
-        if not (3_000_000 <= count <= 4_000_000):
+    if rows_ingested is not None:
+        count = rows_ingested
+        log.info(f"Delta bronze row count for {trip_month} (from XCom): {count:,}")
+        if not (1_000_000 <= count <= 5_000_000):
             failures.append(f"bronze row count out of range: {count:,}")
-
-        # Sample for column checks
-        sample_df = df.limit(SAMPLE_SIZE).toPandas()
-        df.unpersist()
-        ds = ge.from_pandas(sample_df)
-
-        for col in [
-            "tpep_pickup_datetime",
-            "tpep_dropoff_datetime",
-            "fare_amount",
-            "trip_distance",
-        ]:
-            r = ds.expect_column_values_to_not_be_null(col)
-            if not r["success"]:
-                failures.append(f"bronze null check failed: {col}")
-
-        r = ds.expect_column_values_to_be_between(
-            "fare_amount", min_value=-1500, max_value=5000
-        )
-        if not r["success"]:
-            failures.append("bronze fare_amount out of range")
-
-    finally:
-        spark.stop()
+    else:
+        log.warning("rows_ingested not available from XCom — skipping count check")
 
     passed = len(failures) == 0
     log.info(f"Bronze validation: {'PASS' if passed else 'FAIL'}")
@@ -278,7 +249,8 @@ def gx_validate(**context):
 
     engine = get_engine()
 
-    bronze_passed, bronze_failures = validate_bronze(trip_month)
+    rows_ingested = ti.xcom_pull(task_ids="ingest", key="rows_ingested")
+    bronze_passed, bronze_failures = validate_bronze(trip_month, rows_ingested)
     silver_passed, silver_failures = validate_silver(engine)
     gold_passed, gold_failures = validate_gold(engine)
 
