@@ -64,26 +64,20 @@ def download_parquet(trip_month: str, data_dir: str) -> Path:
 
 def get_spark_session():
     from pyspark.sql import SparkSession
+    from delta import configure_spark_with_delta_pip
 
-    return (
+    builder = (
         SparkSession.builder.master("local[*]")
         .appName("nyc_taxi_bronze_ingest")
         .config("spark.driver.memory", "2g")
         .config("spark.sql.shuffle.partitions", "8")
-        .config(
-            "spark.jars.packages",
-            "io.delta:delta-core_2.12:2.3.0",
-        )
-        .config(
-            "spark.sql.extensions",
-            "io.delta.sql.DeltaSparkSessionExtension",
-        )
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .getOrCreate()
     )
+    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def write_bronze_delta(parquet_path: Path, trip_month: str, run_id: str) -> int:
@@ -97,7 +91,7 @@ def write_bronze_delta(parquet_path: Path, trip_month: str, run_id: str) -> int:
     try:
         log.info(f"Reading parquet: {parquet_path}")
         df = spark.read.parquet(str(parquet_path))
-        log.info(f"Parquet loaded: {df.count():,} rows x {len(df.columns)} columns")
+        log.info(f"Parquet loaded: {len(df.columns)} columns")
 
         # Add pipeline metadata columns
         from pyspark.sql import functions as F

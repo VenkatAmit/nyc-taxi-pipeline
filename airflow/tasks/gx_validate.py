@@ -59,25 +59,19 @@ def load_sample(
 
 def get_delta_spark_session():
     from pyspark.sql import SparkSession
+    from delta import configure_spark_with_delta_pip
 
-    return (
+    builder = (
         SparkSession.builder.master("local[*]")
         .appName("nyc_taxi_gx_bronze")
         .config("spark.driver.memory", "2g")
-        .config(
-            "spark.jars.packages",
-            "io.delta:delta-core_2.12:2.3.0",
-        )
-        .config(
-            "spark.sql.extensions",
-            "io.delta.sql.DeltaSparkSessionExtension",
-        )
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .getOrCreate()
     )
+    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def validate_bronze(trip_month: str) -> Tuple[bool, List[str]]:
@@ -94,8 +88,9 @@ def validate_bronze(trip_month: str) -> Tuple[bool, List[str]]:
             spark.read.format("delta")
             .load(DELTA_BRONZE_PATH)
             .filter(f"trip_month = '{trip_month}'")
+            .cache()
         )
-        count = df.count()
+        count = df.count()  # scan #1 — materialises cache
         log.info(f"Delta bronze row count for {trip_month}: {count:,}")
 
         if not (3_000_000 <= count <= 4_000_000):
@@ -103,6 +98,7 @@ def validate_bronze(trip_month: str) -> Tuple[bool, List[str]]:
 
         # Sample for column checks
         sample_df = df.limit(SAMPLE_SIZE).toPandas()
+        df.unpersist()
         ds = ge.from_pandas(sample_df)
 
         for col in [
@@ -303,7 +299,9 @@ def gx_validate(**context):
     ti.xcom_push(key="quality_passed", value=overall_passed)
     ti.xcom_push(key="quality_notes", value=quality_notes)
 
-    FAIL_ON_QUALITY_ISSUES = False
+    FAIL_ON_QUALITY_ISSUES = (
+        os.environ.get("FAIL_ON_QUALITY_ISSUES", "false").lower() == "true"
+    )
     if not overall_passed and FAIL_ON_QUALITY_ISSUES:
         raise ValueError(f"Data quality checks failed: {quality_notes}")
 
