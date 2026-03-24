@@ -33,6 +33,12 @@ Delta Lake + PostgreSQL (medallion architecture)
   Seed    — taxi_zones            (Postgres, dbt seed — 265 NYC zones)
 ```
 
+## Pipeline Status
+
+![Airflow Backfill Complete](docs/airflow_backfill_complete.png)
+
+*23/23 monthly runs green — Jan 2024 to Nov 2025 backfill complete*
+
 ## Quick Start
 
 ```bash
