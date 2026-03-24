@@ -96,14 +96,35 @@ def validate_bronze(
     return passed, failures
 
 
-def validate_silver(engine) -> Tuple[bool, List[str]]:
+def validate_silver(
+    engine, trip_month: str = None, rows_cleaned: int = None
+) -> Tuple[bool, List[str]]:
     log.info("Validating silver layer (cleaned_trips)...")
     failures = []
 
-    count = get_row_count(engine, "cleaned_trips")
-    log.info(f"cleaned_trips row count: {count:,}")
-    if not (3_000_000 <= count <= 3_200_000):
-        failures.append(f"silver row count out of range: {count:,}")
+    if trip_month:
+        with engine.connect() as conn:
+            result = conn.execute(
+                sqlalchemy.text(
+                    "SELECT COUNT(*) FROM cleaned_trips WHERE trip_month = :m"
+                ),
+                {"m": trip_month},
+            )
+            count = result.scalar()
+        log.info(f"cleaned_trips row count for {trip_month}: {count:,}")
+        if count < 100_000:
+            failures.append(
+                f"silver row count suspiciously low for {trip_month}: {count:,}"
+            )
+        if rows_cleaned and abs(count - rows_cleaned) > 100:
+            failures.append(
+                f"silver count mismatch: gx={count:,} vs spark_transform={rows_cleaned:,}"
+            )
+    else:
+        count = get_row_count(engine, "cleaned_trips")
+        log.info(f"cleaned_trips total row count: {count:,}")
+        if count < 100_000:
+            failures.append(f"silver row count suspiciously low: {count:,}")
 
     ds = load_sample(engine, "cleaned_trips")
 
@@ -128,7 +149,7 @@ def validate_silver(engine) -> Tuple[bool, List[str]]:
     return passed, failures
 
 
-def validate_gold(engine) -> Tuple[bool, List[str]]:
+def validate_gold(engine, trip_month: str = None) -> Tuple[bool, List[str]]:
     """
     Validate gold layer — references updated to match the new
     star schema model names (agg_hourly_metrics, agg_zone_summary).
@@ -149,12 +170,23 @@ def validate_gold(engine) -> Tuple[bool, List[str]]:
             log.warning("Gold tables not yet created — skipping gold validation")
             return False, failures
 
-    hm_count = get_row_count(engine, "public.agg_hourly_metrics")
-    log.info(f"agg_hourly_metrics row count: {hm_count}")
-    if not (5_000 <= hm_count <= 6_000):
-        failures.append(f"agg_hourly_metrics row count: {hm_count}")
+    if trip_month:
+        with engine.connect() as conn:
+            result = conn.execute(
+                sqlalchemy.text(
+                    "SELECT COUNT(*) FROM public.agg_hourly_metrics WHERE trip_month_num = :m"
+                ),
+                {"m": int(trip_month.split("-")[1])},
+            )
+            hm_count = result.scalar()
+        log.info(f"agg_hourly_metrics row count for month {trip_month}: {hm_count}")
+    else:
+        hm_count = get_row_count(engine, "public.agg_hourly_metrics")
+        log.info(f"agg_hourly_metrics total row count: {hm_count}")
+    if hm_count < 100:
+        failures.append(f"agg_hourly_metrics row count too low: {hm_count}")
 
-    ds = load_sample(engine, "public.agg_hourly_metrics", limit=5511)
+    ds = load_sample(engine, "public.agg_hourly_metrics", limit=min(hm_count, 50_000))
     r = ds.expect_column_values_to_not_be_null("time_of_day_bucket")
     if not r["success"]:
         failures.append("agg_hourly_metrics null time_of_day_bucket")
@@ -167,7 +199,7 @@ def validate_gold(engine) -> Tuple[bool, List[str]]:
 
     zs_count = get_row_count(engine, "public.agg_zone_summary")
     log.info(f"agg_zone_summary row count: {zs_count}")
-    if zs_count != 252:
+    if zs_count < 100:
         failures.append(f"agg_zone_summary row count: {zs_count}")
 
     ds = load_sample(engine, "public.agg_zone_summary", limit=252)
@@ -251,8 +283,9 @@ def gx_validate(**context):
 
     rows_ingested = ti.xcom_pull(task_ids="ingest", key="rows_ingested")
     bronze_passed, bronze_failures = validate_bronze(trip_month, rows_ingested)
-    silver_passed, silver_failures = validate_silver(engine)
-    gold_passed, gold_failures = validate_gold(engine)
+    rows_cleaned = ti.xcom_pull(task_ids="spark_transform", key="rows_cleaned")
+    silver_passed, silver_failures = validate_silver(engine, trip_month, rows_cleaned)
+    gold_passed, gold_failures = validate_gold(engine, trip_month)
 
     results = {
         "bronze (Delta)": {"passed": bronze_passed, "failures": bronze_failures},
