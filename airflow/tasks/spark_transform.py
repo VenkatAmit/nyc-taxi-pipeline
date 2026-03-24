@@ -94,7 +94,7 @@ def read_bronze(spark, trip_month: str):
     return df, count
 
 
-def apply_cleaning_rules(df):
+def apply_cleaning_rules(df, trip_month: str):
     """
     Chain all 5 filters into a single Spark pass.
     No intermediate counts — df is already cached so the
@@ -102,9 +102,16 @@ def apply_cleaning_rules(df):
     """
     from pyspark.sql import functions as F
 
+    # Compute month boundaries dynamically from trip_month (YYYY-MM)
+    year, month = int(trip_month[:4]), int(trip_month[5:7])
+    next_month = month + 1 if month < 12 else 1
+    next_year = year if month < 12 else year + 1
+    month_start = f"{year}-{month:02d}-01"
+    month_end = f"{next_year}-{next_month:02d}-01"
+
     df = df.filter(
-        (F.col("tpep_pickup_datetime") >= "2009-01-01")
-        & (F.col("tpep_pickup_datetime") < "2025-01-01")
+        (F.col("tpep_pickup_datetime") >= month_start)
+        & (F.col("tpep_pickup_datetime") < month_end)
         & (F.col("fare_amount") > 0)
         & (F.col("fare_amount") <= 500)
         & (F.col("trip_distance") > 0.01)
@@ -271,7 +278,7 @@ def spark_transform(**context):
 
     try:
         df, raw_count = read_bronze(spark, trip_month)
-        df, rows_cleaned = apply_cleaning_rules(df)
+        df, rows_cleaned = apply_cleaning_rules(df, trip_month)
         df = add_derived_columns(df)
         rows_dropped = raw_count - rows_cleaned
         write_silver(df, trip_month, rows_cleaned)
