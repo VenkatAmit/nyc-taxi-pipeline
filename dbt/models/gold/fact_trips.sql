@@ -46,7 +46,9 @@ SELECT  -- noqa: ST06
         ELSE 0
     END AS tip_pct,
     ('x' || SUBSTR(MD5(
-        t.pickup_datetime::TEXT || t.pu_location_id::TEXT || t.fare_amount::TEXT
+        t.pickup_datetime::TEXT || t.dropoff_datetime::TEXT
+        || t.pu_location_id::TEXT || t.do_location_id::TEXT
+        || t.fare_amount::TEXT || t.tip_amount::TEXT
     ), 1, 16))::BIT(64)::BIGINT AS trip_key
 
 FROM trips AS t
