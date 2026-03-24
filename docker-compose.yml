@@ -25,6 +25,7 @@ x-airflow-common:
     - ./airflow/data:/opt/airflow/data
     - ./dbt:/opt/airflow/dbt
     - ./great_expectations/reports:/opt/airflow/ge_reports
+  mem_limit: 3g
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     airflow_db:
@@ -37,6 +38,7 @@ services:
   airflow_db:
     image: postgres:15
     container_name: airflow_db
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -54,6 +56,13 @@ services:
   pipeline_db:
     image: postgres:15
     container_name: pipeline_db
+    mem_limit: 1500m
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c work_mem=64MB
+        -c maintenance_work_mem=128MB
+        -c max_connections=20
     environment:
       POSTGRES_USER: ${PIPELINE_DB_USER}
       POSTGRES_PASSWORD: ${PIPELINE_DB_PASSWORD}
@@ -93,6 +102,7 @@ services:
   airflow_webserver:
     <<: *airflow-common
     container_name: airflow_webserver
+    mem_limit: 1g
     command: webserver
     ports:
       - "8081:8080"
@@ -112,6 +122,7 @@ services:
   airflow_scheduler:
     <<: *airflow-common
     container_name: airflow_scheduler
+    mem_limit: 1g
     command: scheduler
     restart: unless-stopped
     depends_on:
@@ -121,8 +132,10 @@ services:
       - taxi_net
 
   superset:
-    image: apache/superset:latest
+    image: apache/superset:3.1.0
     container_name: superset
+    profiles: [tools]
+    mem_limit: 1g
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-supersetsecretkey}
     ports:
@@ -147,6 +160,8 @@ services:
   jupyter:
     image: jupyter/pyspark-notebook:latest
     container_name: jupyter
+    profiles: [tools]
+    mem_limit: 2g
     ports:
       - "8888:8888"
     volumes:

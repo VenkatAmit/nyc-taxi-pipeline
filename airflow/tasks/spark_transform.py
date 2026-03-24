@@ -31,9 +31,10 @@ VALID_PAYMENT_TYPES = {1, 2, 3, 4, 5, 6}
 
 
 def get_spark_session():
+    from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
 
-    return (
+    builder = (
         SparkSession.builder.master("local[*]")
         .appName("nyc_taxi_silver")
         .config("spark.driver.memory", "2g")
@@ -43,7 +44,7 @@ def get_spark_session():
         .config("spark.sql.shuffle.partitions", "8")
         .config(
             "spark.jars.packages",
-            "io.delta:delta-core_2.12:2.3.0,org.postgresql:postgresql:42.6.0",
+            "org.postgresql:postgresql:42.6.0",
         )
         .config(
             "spark.sql.extensions",
@@ -53,8 +54,8 @@ def get_spark_session():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .getOrCreate()
     )
+    return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
 def get_jdbc_url():
@@ -75,6 +76,7 @@ def get_jdbc_props():
 def read_bronze(spark, trip_month: str):
     """
     Read bronze Delta table filtered to the current trip_month.
+    Cache immediately so all downstream operations hit memory.
     Delta partition pruning means only the relevant Parquet files
     are read — equivalent to the old WHERE trip_month = ? JDBC push-down.
     """
@@ -83,55 +85,50 @@ def read_bronze(spark, trip_month: str):
         spark.read.format("delta")
         .load(DELTA_BRONZE_PATH)
         .filter(f"trip_month = '{trip_month}'")
+        .cache()
     )
-    count = df.count()
-    log.info(f"Bronze rows loaded: {count:,}")
-    return df
+    count = df.count()  # scan #1 — materialises cache
+    log.info(f"Bronze rows loaded and cached: {count:,}")
+    return df, count
 
 
 def apply_cleaning_rules(df):
+    """
+    Chain all 5 filters into a single Spark pass.
+    No intermediate counts — df is already cached so the
+    final count hits memory, not Delta.
+    """
     from pyspark.sql import functions as F
-
-    initial_count = df.count()
 
     df = df.filter(
         (F.col("tpep_pickup_datetime") >= "2009-01-01")
         & (F.col("tpep_pickup_datetime") < "2025-01-01")
-    )
-    log.info(f"After date filter: {df.count():,} rows")
-
-    df = df.filter((F.col("fare_amount") > 0) & (F.col("fare_amount") <= 500))
-    log.info(f"After fare filter: {df.count():,} rows")
-
-    df = df.filter((F.col("trip_distance") > 0.01) & (F.col("trip_distance") <= 200))
-    log.info(f"After distance filter: {df.count():,} rows")
-
-    df = df.filter(
-        (
-            F.unix_timestamp("tpep_dropoff_datetime")
-            - F.unix_timestamp("tpep_pickup_datetime")
+        & (F.col("fare_amount") > 0)
+        & (F.col("fare_amount") <= 500)
+        & (F.col("trip_distance") > 0.01)
+        & (F.col("trip_distance") <= 200)
+        & (
+            (
+                F.unix_timestamp("tpep_dropoff_datetime")
+                - F.unix_timestamp("tpep_pickup_datetime")
+            )
+            / 60
+            > 0
         )
-        / 60
-        > 0
-    )
-    df = df.filter(
-        (
-            F.unix_timestamp("tpep_dropoff_datetime")
-            - F.unix_timestamp("tpep_pickup_datetime")
+        & (
+            (
+                F.unix_timestamp("tpep_dropoff_datetime")
+                - F.unix_timestamp("tpep_pickup_datetime")
+            )
+            / 60
+            <= 300
         )
-        / 60
-        <= 300
+        & F.col("payment_type").isin(list(VALID_PAYMENT_TYPES))
     )
-    log.info(f"After duration filter: {df.count():,} rows")
 
-    df = df.filter(F.col("payment_type").isin(list(VALID_PAYMENT_TYPES)))
-    log.info(f"After payment_type filter: {df.count():,} rows")
-
-    final_count = df.count()
-    rows_dropped = initial_count - final_count
-    log.info(f"Cleaning complete: dropped {rows_dropped:,} rows")
-
-    return df, rows_dropped
+    final_count = df.count()  # scan #2 — hits cache, not Delta
+    log.info(f"Cleaning complete: {final_count:,} rows passed all filters")
+    return df, final_count
 
 
 def add_derived_columns(df):
@@ -173,7 +170,7 @@ def add_derived_columns(df):
     return df
 
 
-def write_silver(df, trip_month: str):
+def write_silver(df, trip_month: str, row_count: int):
     from pyspark.sql import functions as F
 
     jdbc_url = get_jdbc_url()
@@ -233,7 +230,6 @@ def write_silver(df, trip_month: str):
     available = [c for c in silver_columns if c in df.columns]
     df = df.select(available)
 
-    row_count = df.count()
     log.info(f"Writing {row_count:,} rows to cleaned_trips")
 
     df.repartition(8).write.option("batchsize", 10000).jdbc(
@@ -257,11 +253,13 @@ def spark_transform(**context):
     spark = get_spark_session()
 
     try:
-        df = read_bronze(spark, trip_month)
-        raw_count = df.count()
-        df, rows_dropped = apply_cleaning_rules(df)
+        df, raw_count = read_bronze(spark, trip_month)
+        df, rows_cleaned = apply_cleaning_rules(df)
         df = add_derived_columns(df)
-        rows_cleaned = write_silver(df, trip_month)
+        rows_dropped = raw_count - rows_cleaned
+        write_silver(df, trip_month, rows_cleaned)
+        df.unpersist()
+        log.info("Cache released")
     finally:
         spark.stop()
         log.info("Spark session stopped")
