@@ -1,4 +1,4 @@
-# NYC Taxi Pipeline
+# cab-spark-data-pipeline
 
 ## Architecture
 
