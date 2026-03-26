@@ -29,3 +29,16 @@ dbt/profiles.yml
 dbt/.user.yml
 logs/
 great_expectations/reports/*.html
+
+# Delta Lake bronze data
+airflow/data/
+*.parquet
+*.crc
+*.snappy.parquet
+
+# Airflow logs
+airflow/logs/
+
+# Python cache
+**/__pycache__/
+**/*.pyc

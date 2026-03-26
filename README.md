@@ -1,5 +1,12 @@
 # NYC Taxi Pipeline
 
+## Architecture
+
+![cab-spark-data-pipeline Architecture](docs/assets/architecture.png)
+
+> **Stack:** Airflow 2.8.1 · PySpark 3.4.1 · Delta 2.4.0 · dbt-postgres 1.7.18 · PostgreSQL 15 · Great Expectations 0.17.23 · Docker
+
+
 Production-grade batch data pipeline processing 100M+ NYC taxi trips across 23 months of TLC data (Jan 2024 - Nov 2025).
 
 **Stack:** Apache Airflow · PySpark · Delta Lake · dbt · Great Expectations · PostgreSQL · Docker
