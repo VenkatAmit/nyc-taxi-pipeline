@@ -42,3 +42,4 @@ airflow/logs/
 # Python cache
 **/__pycache__/
 **/*.pyc
+uv.lock.readme
