@@ -1,0 +1,134 @@
+[project]
+name = "cab-spark-data-pipeline"
+version = "0.1.0"
+description = "NYC taxi batch pipeline — Bronze (Postgres) → Silver (dbt) → Gold (Delta Lake)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "VenkatAmit" }]
+
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.3",
+    "great-expectations>=0.18",
+    "apache-airflow>=2.9",
+]
+
+[project.optional-dependencies]
+spark = [
+    "pyspark==3.4.*",
+    "delta-spark>=2.4",
+]
+cli = [
+    "typer>=0.12",
+    "httpx>=0.27",
+]
+dev = [
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.14",
+    "ruff>=0.4",
+    "black>=24.4",
+    "isort>=5.13",
+]
+
+[project.scripts]
+cab = "cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.14",
+    "ruff>=0.4",
+    "black>=24.4",
+    "isort>=5.13",
+    "pre-commit>=3.7",
+]
+
+[tool.uv.sources]
+# Spark extras are only installed inside the gold Docker image.
+# On the host (Python 3.14) install without [spark] to keep the
+# tooling env lean and JVM-free.
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["pipeline", "cli", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "TID", # flake8-tidy-imports  ← enforces layer import boundaries
+    "ANN", # flake8-annotations   ← required type annotations
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "ANN101", # missing type annotation for `self`
+    "ANN102", # missing type annotation for `cls`
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# CLI must never import pipeline internals — it only speaks to Airflow over HTTP.
+"pipeline" = { msg = "cli/ must not import from pipeline/. Use the Airflow REST API instead." }
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]  # test files exempt from annotation requirements
+
+# ---------------------------------------------------------------------------
+# Black
+# ---------------------------------------------------------------------------
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+# ---------------------------------------------------------------------------
+# isort
+# ---------------------------------------------------------------------------
+[tool.isort]
+profile = "black"
+known_first_party = ["pipeline", "cli"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+
+# PySpark and Great Expectations ship partial stubs — ignore missing for those.
+[[tool.mypy.overrides]]
+module = [
+    "pyspark.*",
+    "delta.*",
+    "great_expectations.*",
+    "airflow.*",
+]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
