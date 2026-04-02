@@ -1,0 +1,6 @@
+{
+  "github-actions.workflows.pinned.refresh.enabled": true,
+  "yaml.customTags": [
+    "!reference sequence"
+  ]
+}
