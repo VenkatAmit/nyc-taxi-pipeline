@@ -484,7 +484,7 @@ class GXValidator:
                 f"/{self._settings.db}"
             )
 
-            datasource = context.sources.add_or_update_sql(# type: ignore[attr-defined]
+            datasource = context.sources.add_or_update_sql(  # type: ignore[attr-defined]
                 name="postgres_bronze",
                 connection_string=connection_string,
             )
@@ -502,7 +502,7 @@ class GXValidator:
                 query=query,
             )
             batch_request = asset.build_batch_request()
-            suite = context.add_or_update_expectation_suite(# type: ignore[attr-defined]
+            suite = context.add_or_update_expectation_suite(  # type: ignore[attr-defined]
                 expectation_suite_name=f"{table}_suite"
             )
             return context.get_validator(

@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import typer
+
 from cli.airflow_client import AirflowClient
 from pipeline.exceptions import OrchestratorError
 
@@ -52,7 +53,7 @@ def _poll_until_done(
         run = client.get_dag_run(dag_id, run_id)
         state = run.get("state", "unknown")
         if state in _TERMINAL_STATES:
-            return str(state)   # ← add str() cast to satisfy type checker
+            return str(state)  # ← add str() cast to satisfy type checker
         typer.echo(f"  [{dag_id}] state: {state} — checking again in {poll_interval}s")
         time.sleep(poll_interval)
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
+
 from cli.airflow_client import AirflowClient
 from cli.exceptions import OrchestratorError
 

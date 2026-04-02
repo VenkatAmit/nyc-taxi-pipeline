@@ -29,6 +29,7 @@ from pathlib import Path
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.bash import BashOperator
+
 from pipeline.bronze.ingestor import BronzeIngestor
 from pipeline.bronze.validator import GXValidator
 

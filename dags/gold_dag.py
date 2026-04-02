@@ -25,6 +25,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.sensors.external_task import ExternalTaskSensor
+
 from pipeline.gold.loader import GoldLoader
 from pipeline.gold.run_logger import RunLogger, RunRecord, RunStatus
 from pipeline.settings import get_settings

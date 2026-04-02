@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 
 import typer
+
 from cli.airflow_client import AirflowClient
 from cli.exceptions import OrchestratorError
 
@@ -50,7 +51,7 @@ def _poll_run(
         run = client.get_dag_run(dag_id, run_id)
         state = run.get("state", "unknown")
         if state in _TERMINAL_STATES:
-            return str(state)   # ← add str() cast to satisfy type checker
+            return str(state)  # ← add str() cast to satisfy type checker
         time.sleep(poll_interval)
 
 

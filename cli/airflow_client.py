@@ -53,9 +53,7 @@ class AirflowClient:
         return self._post(f"{_API_PREFIX}/dags/{dag_id}/dagRuns", body)
 
     def get_dag_run(self, dag_id: str, run_id: str) -> dict[str, Any]:
-        return self._get_json(
-            f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}"
-        )
+        return self._get_json(f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}")
 
     def list_dag_runs(
         self,
@@ -77,10 +75,7 @@ class AirflowClient:
         dag_ids: list[str],
         limit: int = 5,
     ) -> dict[str, list[dict[str, Any]]]:
-        return {
-            dag_id: self.list_dag_runs(dag_id, limit=limit)
-            for dag_id in dag_ids
-        }
+        return {dag_id: self.list_dag_runs(dag_id, limit=limit) for dag_id in dag_ids}
 
     def list_task_instances(
         self,
@@ -90,9 +85,7 @@ class AirflowClient:
         response = self._get_json(
             f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}/taskInstances"
         )
-        return cast(
-            list[dict[str, Any]], response.get("task_instances", [])
-        )
+        return cast(list[dict[str, Any]], response.get("task_instances", []))
 
     def get_task_log(
         self,
@@ -146,9 +139,7 @@ class AirflowClient:
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any] | str:
         try:
-            response = self._client.get(
-                path, params=params, headers=headers
-            )
+            response = self._client.get(path, params=params, headers=headers)
             self._raise_for_status(response)
             if "json" in response.headers.get("content-type", ""):
                 return cast(dict[str, Any], response.json())
@@ -164,9 +155,7 @@ class AirflowClient:
     ) -> dict[str, Any]:
         result = self._get(path, params=params, headers=headers)
         if isinstance(result, str):
-            raise OrchestratorError(
-                f"Expected JSON response for GET {path}"
-            )
+            raise OrchestratorError(f"Expected JSON response for GET {path}")
         return result
 
     def _get_text(
