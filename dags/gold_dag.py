@@ -112,7 +112,6 @@ def gold_dag() -> None:
 
         try:
             rows_written = loader.load_fact_trips(partition_date=partition)
-            status = RunStatus.SUCCESS
             finished_at = datetime.now(tz=UTC)
             duration = (finished_at - started_at).total_seconds()
 
