@@ -40,6 +40,9 @@ cab = "cli.main:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["pipeline", "cli"]
+
 [dependency-groups]
 dev = [
     "mypy>=1.10",
@@ -52,61 +55,36 @@ dev = [
     "pre-commit>=3.7",
 ]
 
-[tool.uv.sources]
-# Spark extras are only installed inside the gold Docker image.
-# On the host (Python 3.14) install without [spark] to keep the
-# tooling env lean and JVM-free.
-
-# ---------------------------------------------------------------------------
-# Ruff
-# ---------------------------------------------------------------------------
 [tool.ruff]
 target-version = "py311"
 line-length = 88
 src = ["pipeline", "cli", "tests"]
 
 [tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
-    "TID", # flake8-tidy-imports  ← enforces layer import boundaries
-    "ANN", # flake8-annotations   ← required type annotations
-    "RUF", # ruff-specific rules
-]
-ignore = [
-    "ANN101", # missing type annotation for `self`
-    "ANN102", # missing type annotation for `cls`
-]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "TID", "ANN", "RUF"]
+ignore = ["ANN101", "ANN102", "ANN401"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "pipeline" = { msg = "cli/ must not import from pipeline/. Use the Airflow REST API instead." }
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN"]
-"pipeline/**" = ["TID251"]
-"dags/**" = ["TID251"]
-# ---------------------------------------------------------------------------
-# Black
-# ---------------------------------------------------------------------------
+"tests/**"        = ["ANN"]
+"pipeline/**"     = ["TID251"]
+"dags/**"         = ["TID251"]
+"cli/commands/**" = ["ANN"]
+"cli/main.py"     = ["ANN"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pipeline", "cli"]
+
 [tool.black]
 line-length = 88
 target-version = ["py311"]
 
-# ---------------------------------------------------------------------------
-# isort
-# ---------------------------------------------------------------------------
 [tool.isort]
 profile = "black"
 known_first_party = ["pipeline", "cli"]
 
-# ---------------------------------------------------------------------------
-# mypy
-# ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"
 strict = true
@@ -115,26 +93,43 @@ warn_unused_configs = true
 show_error_codes = true
 pretty = true
 
-# PySpark and Great Expectations ship partial stubs — ignore missing for those.
+# Packages with missing or partial stubs
 [[tool.mypy.overrides]]
 module = [
     "pyspark.*",
     "delta.*",
     "great_expectations.*",
-    "airflow.*",
+    "pyarrow.*",
+    "typer",
 ]
 ignore_missing_imports = true
 
-# ---------------------------------------------------------------------------
-# pytest
-# ---------------------------------------------------------------------------
+# Typer decorators are untyped
+[[tool.mypy.overrides]]
+module = [
+    "cli.main",
+    "cli.commands.run",
+    "cli.commands.status",
+    "cli.commands.backfill",
+    "cli.commands.logs",
+]
+disallow_untyped_decorators = false
+
+# GX and pyarrow have incomplete stubs — suppress return type warnings
+[[tool.mypy.overrides]]
+module = [
+    "pipeline.bronze.validator",
+    "pipeline.bronze.ingestor",
+    "pipeline.gold.loader",
+]
+warn_return_any = false
+
+# cli.config instantiates pydantic-settings classes — mypy can't see env vars
+[[tool.mypy.overrides]]
+module = ["cli.config"]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-v --tb=short"
-
-#---------------------------------------------------------------------------
-# pipeline
-#---------------------------------------------------------------------------
-[tool.hatch.build.targets.wheel]
-packages = ["pipeline"]

@@ -13,9 +13,8 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
-from pipeline.exceptions import OrchestratorError
-
 from cli.airflow_client import AirflowClient
+from pipeline.exceptions import OrchestratorError
 
 status_app = typer.Typer(help="Show pipeline DAG run status", no_args_is_help=False)
 
@@ -32,7 +31,7 @@ _STATE_COLORS = {
 
 def _state_colored(state: str) -> str:
     color = _STATE_COLORS.get(state, typer.colors.WHITE)
-    return typer.style(f"{state:<16}", fg=color)
+    return str(typer.style(f"{state:<16}", fg=color))
 
 
 @status_app.callback(invoke_without_command=True)
@@ -76,4 +75,4 @@ def status(
 
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None

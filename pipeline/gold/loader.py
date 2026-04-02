@@ -146,7 +146,7 @@ class GoldLoader:
             raise SparkError(f"load_fact_trips[{partition_date}]", cause=exc) from exc
 
         logger.info("Wrote %d rows to %s", row_count, delta_path)
-        return row_count
+        return int(row_count)
 
     def load_dim_zones(self) -> int:
         """Load silver_zones into the dim_zones Delta table (full refresh).
@@ -182,7 +182,7 @@ class GoldLoader:
             raise SparkError("load_dim_zones", cause=exc) from exc
 
         logger.info("Wrote %d rows to %s", row_count, delta_path)
-        return row_count
+        return int(row_count)
 
     # ------------------------------------------------------------------
     # JDBC reads
@@ -283,7 +283,7 @@ class GoldLoader:
             If the Delta operation fails.
         """
         try:
-            from delta.tables import DeltaTable  # type: ignore[import]
+            from delta.tables import DeltaTable
         except ImportError as exc:
             raise DeltaError(
                 "import",

@@ -466,7 +466,7 @@ class GXValidator:
         Uses SqlAlchemyDatasource — no Spark required.
         """
         try:
-            import great_expectations as gx  # type: ignore[import]
+            import great_expectations as gx
         except ImportError as exc:
             raise ConfigurationError(
                 "great-expectations is not installed.",
@@ -484,7 +484,7 @@ class GXValidator:
                 f"/{self._settings.db}"
             )
 
-            datasource = context.sources.add_or_update_sql(
+            datasource = context.sources.add_or_update_sql(# type: ignore[attr-defined]
                 name="postgres_bronze",
                 connection_string=connection_string,
             )
@@ -502,7 +502,7 @@ class GXValidator:
                 query=query,
             )
             batch_request = asset.build_batch_request()
-            suite = context.add_or_update_expectation_suite(
+            suite = context.add_or_update_expectation_suite(# type: ignore[attr-defined]
                 expectation_suite_name=f"{table}_suite"
             )
             return context.get_validator(

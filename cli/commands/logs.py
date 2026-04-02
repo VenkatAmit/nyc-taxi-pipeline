@@ -13,9 +13,8 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
-from pipeline.exceptions import OrchestratorError
-
 from cli.airflow_client import AirflowClient
+from cli.exceptions import OrchestratorError
 
 logs_app = typer.Typer(help="Fetch task logs from Airflow", no_args_is_help=False)
 
@@ -106,4 +105,4 @@ def logs(
 
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None

@@ -15,9 +15,8 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import typer
-from pipeline.exceptions import OrchestratorError
-
 from cli.airflow_client import AirflowClient
+from pipeline.exceptions import OrchestratorError
 
 run_app = typer.Typer(help="Trigger pipeline DAG runs", no_args_is_help=True)
 
@@ -34,8 +33,11 @@ def _format_date(date_str: str | None) -> str | None:
         dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
         return dt.isoformat()
     except ValueError:
-        typer.echo(f"Invalid date format: {date_str!r} — expected YYYY-MM-DD", err=True)
-        raise typer.Exit(code=1)
+        typer.echo(
+            f"Invalid date format: {date_str!r} — expected YYYY-MM-DD",
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
 
 
 def _poll_until_done(
@@ -50,7 +52,7 @@ def _poll_until_done(
         run = client.get_dag_run(dag_id, run_id)
         state = run.get("state", "unknown")
         if state in _TERMINAL_STATES:
-            return state
+            return str(state)   # ← add str() cast to satisfy type checker
         typer.echo(f"  [{dag_id}] state: {state} — checking again in {poll_interval}s")
         time.sleep(poll_interval)
 
@@ -82,7 +84,7 @@ def run_bronze(
                     raise typer.Exit(code=1)
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @run_app.command("gold")
@@ -132,7 +134,7 @@ def run_gold(
                     raise typer.Exit(code=1)
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @run_app.command("all")
@@ -177,4 +179,4 @@ def run_all(
 
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None

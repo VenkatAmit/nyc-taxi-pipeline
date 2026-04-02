@@ -297,7 +297,7 @@ class BronzeIngestor:
     @staticmethod
     def _parquet_columns(path: Path) -> list[str]:
         try:
-            import pyarrow.parquet as pq  # type: ignore[import]
+            import pyarrow.parquet as pq
 
             schema = pq.read_schema(path)
             return list(schema.names)
@@ -366,8 +366,7 @@ class BronzeIngestor:
 
         rows = list(self._iter_trips_rows(source_path, partition_date))
         with conn.cursor() as cur:
-            with cur.copy(
-                f"""
+            with cur.copy(f"""
                 COPY {staging} (
                     vendor_id, pickup_datetime, dropoff_datetime,
                     passenger_count, trip_distance,
@@ -375,8 +374,7 @@ class BronzeIngestor:
                     fare_amount, tip_amount, total_amount,
                     partition_date
                 ) FROM STDIN
-                """
-            ) as copy:
+                """) as copy:
                 for row in rows:
                     copy.write_row(row)
 
@@ -385,12 +383,10 @@ class BronzeIngestor:
                 "DELETE FROM raw_trips WHERE partition_date = %s",
                 (partition_date,),
             )
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 INSERT INTO raw_trips
                 SELECT * FROM {staging}
-                """
-            )
+                """)
             cur.execute(f"DROP TABLE {staging}")
 
         return len(rows)
@@ -404,12 +400,10 @@ class BronzeIngestor:
         rows = list(self._iter_zones_rows(source_path))
         with conn.cursor() as cur:
             cur.execute("TRUNCATE raw_zones")
-            with cur.copy(
-                """
+            with cur.copy("""
                 COPY raw_zones (location_id, borough, zone, service_zone)
                 FROM STDIN
-                """
-            ) as copy:
+                """) as copy:
                 for row in rows:
                     copy.write_row(row)
         return len(rows)
@@ -432,7 +426,7 @@ class BronzeIngestor:
         """Yield row tuples from the source file for COPY."""
         suffix = source_path.suffix.lower()
         if suffix == ".parquet":
-            import pyarrow.parquet as pq  # type: ignore[import]
+            import pyarrow.parquet as pq
 
             table = pq.read_table(source_path)
             df = table.to_pydict()

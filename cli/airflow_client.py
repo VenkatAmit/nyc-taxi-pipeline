@@ -2,61 +2,32 @@
 Airflow REST API client.
 
 Thin httpx wrapper — all CLI commands go through this class.
-Never imports from pipeline/ — this is the only HTTP layer in the CLI.
-
-Authentication
---------------
-Basic auth via AirflowSettings (AIRFLOW_USERNAME + AIRFLOW_PASSWORD).
-Override the base URL via AIRFLOW_API_URL environment variable.
-
-API version
------------
-Targets Airflow 2.x stable REST API (/api/v1/).
+Never imports from pipeline/ Service classes.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import httpx
-from pipeline.exceptions import OrchestratorError
-from pipeline.settings import AirflowSettings, get_settings
+
+from cli.config import AirflowSettings, get_airflow_settings
+from cli.exceptions import OrchestratorError
 
 logger = logging.getLogger(__name__)
 
-# Airflow REST API base path
 _API_PREFIX = "/api/v1"
 
 
 class AirflowClient:
-    """HTTP client for the Airflow REST API.
-
-    Parameters
-    ----------
-    settings:
-        AirflowSettings instance. Defaults to get_settings() subset.
-        Pass an explicit instance in tests to avoid real HTTP calls.
-
-    Examples
-    --------
-    ::
-
-        client = AirflowClient()
-        run = client.trigger_dag("bronze_dag")
-        print(run["dag_run_id"])
-    """
+    """HTTP client for the Airflow REST API."""
 
     def __init__(self, settings: AirflowSettings | None = None) -> None:
-        if settings is None:
-            s = get_settings()
-            # AirflowSettings lives in pipeline/settings.py but is only
-            # used here in cli/ — never in Service classes.
-            self._settings = AirflowSettings()
-        else:
-            self._settings = settings
-
+        self._settings: AirflowSettings = (
+            settings if settings is not None else get_airflow_settings()
+        )
         self._client = httpx.Client(
             base_url=self._settings.api_url,
             auth=(
@@ -67,50 +38,24 @@ class AirflowClient:
             timeout=30.0,
         )
 
-    # ------------------------------------------------------------------
-    # DAG runs
-    # ------------------------------------------------------------------
-
     def trigger_dag(
         self,
         dag_id: str,
         logical_date: str | None = None,
         conf: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Trigger a new DAG run.
-
-        Parameters
-        ----------
-        dag_id:
-            The DAG to trigger.
-        logical_date:
-            ISO-8601 datetime string for the logical date override.
-            If None, Airflow uses the current time.
-        conf:
-            Optional JSON config passed to the DAG run.
-
-        Returns
-        -------
-        dict
-            The created DagRun object from the Airflow API.
-
-        Raises
-        ------
-        OrchestratorError
-            If the API returns a non-2xx response.
-        """
+        """Trigger a new DAG run."""
         body: dict[str, Any] = {}
         if logical_date:
             body["logical_date"] = logical_date
         if conf:
             body["conf"] = conf
-
-        response = self._post(f"{_API_PREFIX}/dags/{dag_id}/dagRuns", body)
-        return response
+        return self._post(f"{_API_PREFIX}/dags/{dag_id}/dagRuns", body)
 
     def get_dag_run(self, dag_id: str, run_id: str) -> dict[str, Any]:
-        """Fetch a specific DAG run by run_id."""
-        return self._get(f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}")
+        return self._get_json(
+            f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}"
+        )
 
     def list_dag_runs(
         self,
@@ -118,49 +63,36 @@ class AirflowClient:
         limit: int = 10,
         state: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List recent DAG runs for a given DAG.
-
-        Parameters
-        ----------
-        dag_id:
-            The DAG to query.
-        limit:
-            Maximum number of runs to return.
-        state:
-            Filter by state: "running", "success", "failed", or None for all.
-        """
         params: dict[str, Any] = {"limit": limit, "order_by": "-start_date"}
         if state:
             params["state"] = state
-
-        response = self._get(
+        response = self._get_json(
             f"{_API_PREFIX}/dags/{dag_id}/dagRuns",
             params=params,
         )
-        return response.get("dag_runs", [])
+        return cast(list[dict[str, Any]], response.get("dag_runs", []))
 
     def list_all_dag_runs(
         self,
         dag_ids: list[str],
         limit: int = 5,
     ) -> dict[str, list[dict[str, Any]]]:
-        """Return recent runs for multiple DAGs keyed by dag_id."""
-        return {dag_id: self.list_dag_runs(dag_id, limit=limit) for dag_id in dag_ids}
-
-    # ------------------------------------------------------------------
-    # Task instances
-    # ------------------------------------------------------------------
+        return {
+            dag_id: self.list_dag_runs(dag_id, limit=limit)
+            for dag_id in dag_ids
+        }
 
     def list_task_instances(
         self,
         dag_id: str,
         run_id: str,
     ) -> list[dict[str, Any]]:
-        """List all task instances for a DAG run."""
-        response = self._get(
+        response = self._get_json(
             f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}/taskInstances"
         )
-        return response.get("task_instances", [])
+        return cast(
+            list[dict[str, Any]], response.get("task_instances", [])
+        )
 
     def get_task_log(
         self,
@@ -169,22 +101,11 @@ class AirflowClient:
         task_id: str,
         try_number: int = 1,
     ) -> str:
-        """Fetch log content for a specific task instance.
-
-        Returns
-        -------
-        str
-            Raw log content.
-        """
-        response = self._get(
+        return self._get_text(
             f"{_API_PREFIX}/dags/{dag_id}/dagRuns/{run_id}"
             f"/taskInstances/{task_id}/logs/{try_number}",
             headers={"Accept": "text/plain"},
         )
-        # Log endpoint returns plain text, not JSON
-        if isinstance(response, str):
-            return response
-        return str(response)
 
     def stream_task_log(
         self,
@@ -193,7 +114,7 @@ class AirflowClient:
         task_id: str,
         try_number: int = 1,
     ) -> Iterator[str]:
-        """Stream task log lines to stdout."""
+        """Stream task log lines."""
         url = (
             f"{self._settings.api_url}{_API_PREFIX}/dags/{dag_id}"
             f"/dagRuns/{run_id}/taskInstances/{task_id}/logs/{try_number}"
@@ -213,42 +134,57 @@ class AirflowClient:
                     f"stream logs {dag_id}/{task_id}",
                     status_code=response.status_code,
                 )
-            for line in response.iter_lines():
-                yield line
-
-    # ------------------------------------------------------------------
-    # Health
-    # ------------------------------------------------------------------
+            yield from response.iter_lines()
 
     def health(self) -> dict[str, Any]:
-        """Check Airflow API health."""
-        return self._get(f"{_API_PREFIX}/health")
-
-    # ------------------------------------------------------------------
-    # Private HTTP helpers
-    # ------------------------------------------------------------------
+        return self._get_json(f"{_API_PREFIX}/health")
 
     def _get(
         self,
         path: str,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-    ) -> Any:
+    ) -> dict[str, Any] | str:
         try:
-            response = self._client.get(path, params=params, headers=headers)
+            response = self._client.get(
+                path, params=params, headers=headers
+            )
             self._raise_for_status(response)
-            content_type = response.headers.get("content-type", "")
-            if "json" in content_type:
-                return response.json()
+            if "json" in response.headers.get("content-type", ""):
+                return cast(dict[str, Any], response.json())
             return response.text
         except httpx.RequestError as exc:
             raise OrchestratorError(f"GET {path}", cause=exc) from exc
+
+    def _get_json(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        result = self._get(path, params=params, headers=headers)
+        if isinstance(result, str):
+            raise OrchestratorError(
+                f"Expected JSON response for GET {path}"
+            )
+        return result
+
+    def _get_text(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> str:
+        result = self._get(path, params=params, headers=headers)
+        if isinstance(result, str):
+            return result
+        return str(result)
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
             response = self._client.post(path, json=body)
             self._raise_for_status(response)
-            return response.json()  # type: ignore[return-value]
+            return cast(dict[str, Any], response.json())
         except httpx.RequestError as exc:
             raise OrchestratorError(f"POST {path}", cause=exc) from exc
 
@@ -267,5 +203,4 @@ class AirflowClient:
         self._client.close()
 
     def close(self) -> None:
-        """Close the underlying httpx client."""
         self._client.close()

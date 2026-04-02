@@ -15,9 +15,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 
 import typer
-from pipeline.exceptions import OrchestratorError
-
 from cli.airflow_client import AirflowClient
+from cli.exceptions import OrchestratorError
 
 backfill_app = typer.Typer(
     help="Trigger backfill runs for a date range", no_args_is_help=False
@@ -51,7 +50,7 @@ def _poll_run(
         run = client.get_dag_run(dag_id, run_id)
         state = run.get("state", "unknown")
         if state in _TERMINAL_STATES:
-            return state
+            return str(state)   # ← add str() cast to satisfy type checker
         time.sleep(poll_interval)
 
 
@@ -96,7 +95,7 @@ def backfill(
         end_date = datetime.strptime(end, "%Y-%m-%d").date()
     except ValueError:
         typer.echo("Invalid date format — expected YYYY-MM-DD", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     if start_date > end_date:
         typer.echo("--start must be before --end", err=True)
@@ -106,7 +105,7 @@ def backfill(
     dag_ids = [dag] if dag else _ALL_DAGS
 
     typer.echo(
-        f"Backfill: {len(dates)} dates × {len(dag_ids)} DAG(s) "
+        f"Backfill: {len(dates)} dates x {len(dag_ids)} DAG(s) "
         f"[concurrency={concurrency}]"
     )
 
@@ -159,7 +158,7 @@ def backfill(
 
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     # Summary
     total = len(dates) * len(dag_ids)
