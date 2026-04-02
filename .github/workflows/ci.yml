@@ -11,34 +11,58 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
-      - name: Install linters
-        run: pip install black flake8
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.11"
+
+      - name: Install dev dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check pipeline/ cli/ dags/ || true
+
       - name: Black format check
-        run: black --check airflow/tasks/ || true
-      - name: Flake8 lint
-        run: flake8 airflow/tasks/ --max-line-length=100 || true
+        run: uv run black --check pipeline/ cli/ dags/ || true
+
+      - name: mypy
+        run: uv run mypy pipeline/ || true
 
   lint-sql:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
+
       - name: Install sqlfluff
         run: pip install sqlfluff
+
       - name: SQLFluff lint dbt models
-        run: sqlfluff lint dbt/models/ --dialect ansi || true
+        run: sqlfluff lint dbt/models/ --dialect postgres || true
 
   validate-dag:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
+
       - name: Check DAG syntax
-        run: python3 -c "import ast; ast.parse(open('airflow/dags/taxi_pipeline.py').read()); print('DAG syntax OK')"
+        run: |
+          python3 -c "
+          import ast, sys
+          files = ['dags/bronze_dag.py', 'dags/gold_dag.py']
+          for f in files:
+              ast.parse(open(f).read())
+              print(f'DAG syntax OK: {f}')
+          "
