@@ -45,3 +45,4 @@ airflow/logs/
 uv.lock.readme
 logs/
 great_expectations/reports/
+.env

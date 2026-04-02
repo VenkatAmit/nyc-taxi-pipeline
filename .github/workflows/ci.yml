@@ -6,63 +6,303 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-progress runs on the same branch when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# Shared environment
+# ---------------------------------------------------------------------------
+env:
+  UV_VERSION: "0.11"
+  PYTHON_TOOLING_VERSION: "3.14"
+  PYTHON_SPARK_VERSION: "3.11"
+
 jobs:
-  lint-python:
+
+  # -------------------------------------------------------------------------
+  # Job 1: Lint — Python 3.14, ruff + black + mypy --strict
+  # -------------------------------------------------------------------------
+  lint:
+    name: Lint (Python ${{ env.PYTHON_TOOLING_VERSION }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.14"
-
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
-          version: "0.11"
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_TOOLING_VERSION }}
 
       - name: Install dev dependencies
         run: uv sync --frozen
 
       - name: Ruff lint
-        run: uv run ruff check pipeline/ cli/ dags/ || true
+        run: uv run ruff check pipeline/ cli/ dags/
+
+      - name: Ruff format check
+        run: uv run ruff format --check pipeline/ cli/ dags/
 
       - name: Black format check
-        run: uv run black --check pipeline/ cli/ dags/ || true
+        run: uv run black --check pipeline/ cli/ dags/
 
-      - name: mypy
-        run: uv run mypy pipeline/ || true
+      - name: mypy --strict
+        run: uv run mypy pipeline/ cli/
 
+  # -------------------------------------------------------------------------
+  # Job 2: SQL lint — sqlfluff on dbt models
+  # -------------------------------------------------------------------------
   lint-sql:
+    name: SQL lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_SPARK_VERSION }}
 
       - name: Install sqlfluff
-        run: pip install sqlfluff
+        run: pip install sqlfluff==3.4.0
 
-      - name: SQLFluff lint dbt models
-        run: sqlfluff lint dbt/models/ --dialect postgres || true
+      - name: SQLFluff lint
+        run: sqlfluff lint dbt/models/ --dialect postgres --config dbt/.sqlfluff
 
-  validate-dag:
+  # -------------------------------------------------------------------------
+  # Job 3: Test — Python 3.11 (matches Spark Docker images)
+  # -------------------------------------------------------------------------
+  test:
+    name: Test (Python ${{ env.PYTHON_SPARK_VERSION }})
     runs-on: ubuntu-latest
+    needs: lint
+
+    env:
+      # Minimal env vars so Settings can instantiate in tests
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: test_cab_pipeline
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      DELTA_GOLD_BASE_PATH: /tmp/gold
+      DELTA_CHECKPOINT_PATH: /tmp/checkpoints
+      AIRFLOW_API_URL: http://localhost:8080
+      AIRFLOW_USERNAME: admin
+      AIRFLOW_PASSWORD: admin
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          version: ${{ env.UV_VERSION }}
 
-      - name: Check DAG syntax
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_SPARK_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --python ${{ env.PYTHON_SPARK_VERSION }}
+
+      - name: Run tests
         run: |
-          python3 -c "
-          import ast, sys
-          files = ['dags/bronze_dag.py', 'dags/gold_dag.py']
-          for f in files:
-              ast.parse(open(f).read())
-              print(f'DAG syntax OK: {f}')
-          "
+          uv run pytest tests/ \
+            --tb=short \
+            --junit-xml=test-results.xml \
+            -v \
+            --ignore=tests/test_dag_integrity.py
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results.xml
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Job 4: DAG integrity — AST checks without Airflow installed
+  # -------------------------------------------------------------------------
+  dag-check:
+    name: DAG integrity check
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_SPARK_VERSION }}
+
+      - name: Check DAG syntax (AST)
+        run: |
+          python3 - << 'EOF'
+          import ast
+          import sys
+
+          dag_files = [
+              "dags/bronze_dag.py",
+              "dags/gold_dag.py",
+          ]
+
+          errors = []
+          for path in dag_files:
+              try:
+                  source = open(path).read()
+                  ast.parse(source)
+                  print(f"  OK  {path}")
+              except SyntaxError as e:
+                  errors.append(f"  FAIL  {path}: {e}")
+
+          if errors:
+              print("\nSyntax errors found:")
+              for err in errors:
+                  print(err)
+              sys.exit(1)
+
+          print("\nAll DAG files parse cleanly.")
+          EOF
+
+      - name: Check no direct psycopg/pyspark imports in DAGs
+        run: |
+          python3 - << 'EOF'
+          import ast
+          import sys
+
+          banned_prefixes = ["psycopg", "pyspark", "delta"]
+          dag_files = ["dags/bronze_dag.py", "dags/gold_dag.py"]
+          violations = []
+
+          for path in dag_files:
+              tree = ast.parse(open(path).read())
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      for alias in node.names:
+                          if any(alias.name.startswith(p) for p in banned_prefixes):
+                              violations.append(f"{path}: imports {alias.name!r} directly")
+                  if isinstance(node, ast.ImportFrom):
+                      mod = node.module or ""
+                      if any(mod.startswith(p) for p in banned_prefixes):
+                          violations.append(f"{path}: imports from {mod!r} directly")
+
+          if violations:
+              print("DAG import violations found:")
+              for v in violations:
+                  print(f"  {v}")
+              sys.exit(1)
+
+          print("No banned imports in DAG files.")
+          EOF
+
+      - name: Check CLI does not import Service classes
+        run: |
+          python3 - << 'EOF'
+          import ast
+          import sys
+          from pathlib import Path
+
+          banned = ["pipeline.bronze", "pipeline.gold", "pipeline.silver",
+                    "pipeline.spark_session"]
+          cli_files = list(Path("cli").rglob("*.py"))
+          violations = []
+
+          for path in cli_files:
+              tree = ast.parse(path.read_text())
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.ImportFrom):
+                      mod = node.module or ""
+                      if any(mod.startswith(b) for b in banned):
+                          violations.append(f"{path}: imports from {mod!r}")
+                  if isinstance(node, ast.Import):
+                      for alias in node.names:
+                          if any(alias.name.startswith(b) for b in banned):
+                              violations.append(f"{path}: imports {alias.name!r}")
+
+          if violations:
+              print("CLI import boundary violations:")
+              for v in violations:
+                  print(f"  {v}")
+              sys.exit(1)
+
+          print("CLI import boundaries respected.")
+          EOF
+
+  # -------------------------------------------------------------------------
+  # Job 5: Secret scan — trufflehog on changed files
+  # -------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  # -------------------------------------------------------------------------
+  # Job 6: Docker build — bronze image
+  # -------------------------------------------------------------------------
+  docker-bronze:
+    name: Docker build (bronze)
+    runs-on: ubuntu-latest
+    needs: [test, dag-check]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build bronze image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.bronze
+          push: false
+          tags: cab-pipeline-bronze:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # -------------------------------------------------------------------------
+  # Job 7: Docker build — gold image
+  # -------------------------------------------------------------------------
+  docker-gold:
+    name: Docker build (gold)
+    runs-on: ubuntu-latest
+    needs: [test, dag-check]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build gold image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.gold
+          push: false
+          tags: cab-pipeline-gold:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            JDBC_VERSION=42.7.3
