@@ -43,3 +43,5 @@ airflow/logs/
 **/__pycache__/
 **/*.pyc
 uv.lock.readme
+logs/
+great_expectations/reports/
