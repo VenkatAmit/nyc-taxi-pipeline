@@ -29,7 +29,7 @@ SELECT  -- noqa: ST06
     t.tip_amount,
     t.total_amount,
     t.passenger_count,
-    COALESCE(t.pickup_date_key, -1) AS date_key,
+    COALESCE(d.date_key, -1) AS date_key,
     COALESCE(pz.zone_key, -1) AS pickup_zone_key,
     COALESCE(dz.zone_key, -1) AS dropoff_zone_key,
     COALESCE(v.vendor_key, 0) AS vendor_key,
