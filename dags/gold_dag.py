@@ -96,7 +96,7 @@ def gold_dag() -> None:
         loader = GoldLoader()
         run_logger = RunLogger()
         rows_written = 0
-        status = RunStatus.RUNNING
+        # status = RunStatus.RUNNING
 
         # Log start
         run_logger.log(
