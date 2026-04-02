@@ -16,6 +16,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 import psycopg
