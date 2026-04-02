@@ -23,16 +23,14 @@ typically available by 05:00 UTC.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.bash import BashOperator
-
 from pipeline.bronze.ingestor import BronzeIngestor
 from pipeline.bronze.validator import GXValidator
-from pipeline.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +79,7 @@ def _partition_date(logical_date: datetime) -> date:
     dag_id="bronze_dag",
     description="Ingest raw NYC taxi data into Postgres bronze tables",
     schedule="0 6 * * *",
-    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    start_date=datetime(2024, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
     default_args=_DEFAULT_ARGS,
@@ -106,7 +104,9 @@ def bronze_dag() -> None:
             partition_date=partition,
         )
 
-        logger.info("Ingested %d rows in %.2fs", result.rows_copied, result.duration_seconds)
+        logger.info(
+            "Ingested %d rows in %.2fs", result.rows_copied, result.duration_seconds
+        )
         return {
             "table": result.table,
             "partition_date": str(result.partition_date),
@@ -125,7 +125,9 @@ def bronze_dag() -> None:
         ingestor = BronzeIngestor()
         result = ingestor.ingest_zones(source_path=source_path)
 
-        logger.info("Ingested %d zones in %.2fs", result.rows_copied, result.duration_seconds)
+        logger.info(
+            "Ingested %d zones in %.2fs", result.rows_copied, result.duration_seconds
+        )
         return {
             "table": result.table,
             "rows_copied": result.rows_copied,

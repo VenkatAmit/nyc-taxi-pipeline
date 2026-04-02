@@ -11,15 +11,17 @@ Usage
 from __future__ import annotations
 
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 
 import typer
-
-from cli.airflow_client import AirflowClient
 from pipeline.exceptions import OrchestratorError
 
-backfill_app = typer.Typer(help="Trigger backfill runs for a date range", no_args_is_help=False)
+from cli.airflow_client import AirflowClient
+
+backfill_app = typer.Typer(
+    help="Trigger backfill runs for a date range", no_args_is_help=False
+)
 
 _ALL_DAGS = ["bronze_dag", "gold_dag"]
 _TERMINAL_STATES = {"success", "failed", "upstream_failed"}
@@ -36,7 +38,7 @@ def _date_range(start: date, end: date) -> list[date]:
 
 
 def _to_iso(d: date) -> str:
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).isoformat()
+    return datetime(d.year, d.month, d.day, tzinfo=UTC).isoformat()
 
 
 def _poll_run(
@@ -66,7 +68,9 @@ def backfill(
     ],
     dag: Annotated[
         str | None,
-        typer.Option("--dag", "-d", help="DAG to backfill (default: bronze_dag then gold_dag)"),
+        typer.Option(
+            "--dag", "-d", help="DAG to backfill (default: bronze_dag then gold_dag)"
+        ),
     ] = None,
     concurrency: Annotated[
         int,
@@ -74,7 +78,9 @@ def backfill(
     ] = 1,
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="Print dates that would be triggered without triggering"),
+        typer.Option(
+            "--dry-run", help="Print dates that would be triggered without triggering"
+        ),
     ] = False,
 ) -> None:
     """Trigger DAG runs for every date in a range.

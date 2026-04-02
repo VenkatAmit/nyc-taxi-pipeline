@@ -13,9 +13,9 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
+from pipeline.exceptions import OrchestratorError
 
 from cli.airflow_client import AirflowClient
-from pipeline.exceptions import OrchestratorError
 
 logs_app = typer.Typer(help="Fetch task logs from Airflow", no_args_is_help=False)
 

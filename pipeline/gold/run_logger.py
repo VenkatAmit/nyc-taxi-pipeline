@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -197,9 +197,7 @@ class RunLogger:
                     )
                 conn.commit()
         except psycopg.Error as exc:
-            raise PostgresError(
-                "INSERT", "pipeline_runs", cause=exc
-            ) from exc
+            raise PostgresError("INSERT", "pipeline_runs", cause=exc) from exc
 
         logger.info(
             "Run logged [%s] %s/%s — %s rows in %.1fs",

@@ -17,12 +17,12 @@ Targets Airflow 2.x stable REST API (/api/v1/).
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import httpx
-
-from pipeline.settings import AirflowSettings, get_settings
 from pipeline.exceptions import OrchestratorError
+from pipeline.settings import AirflowSettings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -242,9 +242,7 @@ class AirflowClient:
                 return response.json()
             return response.text
         except httpx.RequestError as exc:
-            raise OrchestratorError(
-                f"GET {path}", cause=exc
-            ) from exc
+            raise OrchestratorError(f"GET {path}", cause=exc) from exc
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -252,9 +250,7 @@ class AirflowClient:
             self._raise_for_status(response)
             return response.json()  # type: ignore[return-value]
         except httpx.RequestError as exc:
-            raise OrchestratorError(
-                f"POST {path}", cause=exc
-            ) from exc
+            raise OrchestratorError(f"POST {path}", cause=exc) from exc
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:

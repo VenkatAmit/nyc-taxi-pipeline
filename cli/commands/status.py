@@ -13,9 +13,9 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
+from pipeline.exceptions import OrchestratorError
 
 from cli.airflow_client import AirflowClient
-from pipeline.exceptions import OrchestratorError
 
 status_app = typer.Typer(help="Show pipeline DAG run status", no_args_is_help=False)
 
@@ -64,9 +64,7 @@ def status(
                     typer.echo("  No runs found.")
                     continue
 
-                typer.echo(
-                    f"  {'RUN ID':<45} {'STATE':<16} {'STARTED':<20}"
-                )
+                typer.echo(f"  {'RUN ID':<45} {'STATE':<16} {'STARTED':<20}")
                 typer.echo("  " + "─" * 70)
 
                 for run in runs:
@@ -74,11 +72,7 @@ def status(
                     state = run.get("state", "unknown")
                     started = (run.get("start_date") or "")[:19].replace("T", " ")
 
-                    typer.echo(
-                        f"  {run_id:<45} "
-                        f"{_state_colored(state)} "
-                        f"{started:<20}"
-                    )
+                    typer.echo(f"  {run_id:<45} {_state_colored(state)} {started:<20}")
 
     except OrchestratorError as exc:
         typer.echo(f"Error: {exc}", err=True)

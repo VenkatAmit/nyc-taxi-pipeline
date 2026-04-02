@@ -27,11 +27,16 @@ existing rows are updated in place, new rows are inserted.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import TYPE_CHECKING
 
 from pipeline.exceptions import DeltaError, SparkError
-from pipeline.settings import DeltaSettings, PostgresSettings, SparkSettings, get_settings
+from pipeline.settings import (
+    DeltaSettings,
+    PostgresSettings,
+    SparkSettings,
+    get_settings,
+)
 from pipeline.spark_session import get_spark, stop_spark
 
 if TYPE_CHECKING:
@@ -185,9 +190,9 @@ class GoldLoader:
 
     def _read_silver_trips(
         self,
-        spark: "SparkSession",
+        spark: SparkSession,
         partition_date: date,
-    ) -> "DataFrame":
+    ) -> DataFrame:
         """Read silver_trips for a given partition_date via partitioned JDBC.
 
         The read is split across self._spark_cfg.jdbc_num_partitions
@@ -225,7 +230,7 @@ class GoldLoader:
                 f"JDBC read silver_trips[{partition_date}]", cause=exc
             ) from exc
 
-    def _read_silver_zones(self, spark: "SparkSession") -> "DataFrame":
+    def _read_silver_zones(self, spark: SparkSession) -> DataFrame:
         """Read the full silver_zones table via JDBC (single partition — small table)."""
         try:
             return (
@@ -250,8 +255,8 @@ class GoldLoader:
 
     def _merge_into_delta(
         self,
-        spark: "SparkSession",
-        df: "DataFrame",
+        spark: SparkSession,
+        df: DataFrame,
         delta_path: str,
         merge_keys: list[str],
     ) -> None:
@@ -291,9 +296,7 @@ class GoldLoader:
                 delta_table = DeltaTable.forPath(spark, delta_path)
 
                 # Build merge condition from merge_keys
-                condition = " AND ".join(
-                    f"target.{k} = source.{k}" for k in merge_keys
-                )
+                condition = " AND ".join(f"target.{k} = source.{k}" for k in merge_keys)
 
                 (
                     delta_table.alias("target")
@@ -304,11 +307,7 @@ class GoldLoader:
                 )
             else:
                 # First run — write as a new Delta table
-                (
-                    df.write.format("delta")
-                    .mode("overwrite")
-                    .save(delta_path)
-                )
+                (df.write.format("delta").mode("overwrite").save(delta_path))
         except Exception as exc:
             raise DeltaError("MERGE", delta_path, cause=exc) from exc
 
@@ -316,7 +315,7 @@ class GoldLoader:
     # Spark session management
     # ------------------------------------------------------------------
 
-    def _get_spark(self) -> "SparkSession":
+    def _get_spark(self) -> SparkSession:
         """Return the active SparkSession, creating it if needed."""
         try:
             return get_spark(settings=self._spark_cfg)
