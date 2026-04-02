@@ -1,111 +1,124 @@
+# docker-compose.yml
+#
+# Local development stack for cab-spark-data-pipeline.
+#
+# Core services (always started):
+#   postgres      — bronze + silver data store (Postgres 15)
+#   airflow_db    — Airflow metadata database (Postgres 15)
+#   airflow_init  — one-shot Airflow DB migration + admin user
+#   airflow_web   — Airflow webserver (http://localhost:8080)
+#   airflow_sched — Airflow scheduler
+#
+# Optional tools (start with --profile tools):
+#   jupyter       — JupyterLab for exploration (http://localhost:8888)
+#   superset      — Apache Superset for dashboards (http://localhost:8088)
+#
+# Usage:
+#   docker compose up -d                      # core services
+#   docker compose --profile tools up -d     # + jupyter + superset
+#   docker compose run --rm bronze           # one-shot bronze ingest
+#   docker compose run --rm gold             # one-shot gold load
 
 x-airflow-common:
   &airflow-common
-  build:
-    context: .
-    dockerfile: Dockerfile
+  image: apache/airflow:2.9.2-python3.11
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@airflow_db:5432/${POSTGRES_DB}
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    PIPELINE_DB_USER: ${PIPELINE_DB_USER}
-    PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
-    PIPELINE_DB_NAME: ${PIPELINE_DB_NAME}
-    PIPELINE_DB_HOST: ${PIPELINE_DB_HOST}
-    PIPELINE_DB_PORT: ${PIPELINE_DB_PORT}
-    DATA_DIR: ${DATA_DIR}
-    TLC_BASE_URL: ${TLC_BASE_URL}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+      postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}
+      @airflow_db:5432/${AIRFLOW_DB_NAME}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # Pipeline Postgres connection (matches PostgresSettings env vars)
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: ${POSTGRES_DB}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Delta Lake
+    DELTA_GOLD_BASE_PATH: ${DELTA_GOLD_BASE_PATH:-/data/gold}
+    DELTA_CHECKPOINT_PATH: ${DELTA_CHECKPOINT_PATH:-/data/checkpoints}
+    # dbt project location inside the Airflow worker
+    dbt_project_dir: /opt/airflow/dbt
   volumes:
-    - ./airflow/dags:/opt/airflow/dags
-    - ./airflow/tasks:/opt/airflow/tasks
-    - ./airflow/logs:/opt/airflow/logs
-    - ./airflow/plugins:/opt/airflow/plugins
-    - ./airflow/data:/opt/airflow/data
+    - ./dags:/opt/airflow/dags
     - ./dbt:/opt/airflow/dbt
-    - ./great_expectations/reports:/opt/airflow/ge_reports
-  mem_limit: 3g
-  user: "${AIRFLOW_UID:-50000}:0"
+    - ./pipeline:/opt/airflow/pipeline
+    - airflow_logs:/opt/airflow/logs
   depends_on:
     airflow_db:
       condition: service_healthy
   networks:
-    - taxi_net
+    - pipeline_net
 
 services:
 
-  airflow_db:
+  # ── Pipeline database (bronze + silver) ──────────────────────────────────
+  postgres:
     image: postgres:15
-    container_name: airflow_db
-    mem_limit: 512m
+    container_name: pipeline_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - airflow_db_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
       retries: 5
       start_period: 5s
     networks:
-      - taxi_net
+      - pipeline_net
 
-  pipeline_db:
+  # ── Airflow metadata database ─────────────────────────────────────────────
+  airflow_db:
     image: postgres:15
-    container_name: pipeline_db
-    mem_limit: 1500m
-    command: >
-      postgres
-        -c shared_buffers=256MB
-        -c work_mem=64MB
-        -c maintenance_work_mem=128MB
-        -c max_connections=20
+    container_name: airflow_db
     environment:
-      POSTGRES_USER: ${PIPELINE_DB_USER}
-      POSTGRES_PASSWORD: ${PIPELINE_DB_PASSWORD}
-      POSTGRES_DB: ${PIPELINE_DB_NAME}
+      POSTGRES_USER: ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:-airflow}
     volumes:
-      - pipeline_db_data:/var/lib/postgresql/data
-      - ./sql:/docker-entrypoint-initdb.d:ro
-    ports:
-       - "127.0.0.1:5433:5432"
+      - airflow_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${PIPELINE_DB_USER}"]
+      test: ["CMD", "pg_isready", "-U", "${AIRFLOW_DB_USER:-airflow}"]
       interval: 10s
       retries: 5
       start_period: 5s
     networks:
-      - taxi_net
+      - pipeline_net
 
+  # ── Airflow initialisation ────────────────────────────────────────────────
   airflow_init:
     <<: *airflow-common
     container_name: airflow_init
     entrypoint: /bin/bash
     command:
       - -c
-      - >
-        airflow db migrate &&
-        airflow users create
-        --username admin
-        --password admin
-        --firstname Admin
-        --lastname User
-        --role Admin
-        --email admin@example.com
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
     restart: on-failure
     networks:
-      - taxi_net
+      - pipeline_net
 
-  airflow_webserver:
+  # ── Airflow webserver ─────────────────────────────────────────────────────
+  airflow_web:
     <<: *airflow-common
-    container_name: airflow_webserver
-    mem_limit: 1g
+    container_name: airflow_web
     command: webserver
     ports:
-      - "8081:8080"
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 30s
@@ -117,35 +130,94 @@ services:
       airflow_init:
         condition: service_completed_successfully
     networks:
-      - taxi_net
+      - pipeline_net
 
-  airflow_scheduler:
+  # ── Airflow scheduler ─────────────────────────────────────────────────────
+  airflow_sched:
     <<: *airflow-common
-    container_name: airflow_scheduler
-    mem_limit: 4g
+    container_name: airflow_sched
     command: scheduler
     restart: unless-stopped
     depends_on:
       airflow_init:
         condition: service_completed_successfully
     networks:
-      - taxi_net
+      - pipeline_net
 
+  # ── Bronze worker (one-shot ingest) ──────────────────────────────────────
+  bronze:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bronze
+    container_name: pipeline_bronze
+    env_file: .env
+    volumes:
+      - ./data:/data
+    profiles: [run]
+    networks:
+      - pipeline_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Gold worker (one-shot Delta load) ────────────────────────────────────
+  gold:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gold
+      args:
+        JDBC_VERSION: "42.7.3"
+    container_name: pipeline_gold
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    volumes:
+      - ./data:/data
+    profiles: [run]
+    networks:
+      - pipeline_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── JupyterLab (optional) ─────────────────────────────────────────────────
+  jupyter:
+    image: jupyter/pyspark-notebook:python-3.11
+    container_name: pipeline_jupyter
+    profiles: [tools]
+    ports:
+      - "8888:8888"
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./pipeline:/home/jovyan/pipeline
+    networks:
+      - pipeline_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Apache Superset (optional) ────────────────────────────────────────────
   superset:
     image: apache/superset:3.1.0
-    container_name: superset
+    container_name: pipeline_superset
     profiles: [tools]
-    mem_limit: 1g
-    environment:
-      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-supersetsecretkey}
     ports:
       - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-supersetsecretkey}
     volumes:
       - superset_data:/app/superset_home
     networks:
-      - taxi_net
+      - pipeline_net
     depends_on:
-      pipeline_db:
+      postgres:
         condition: service_healthy
     command: >
       bash -c "
@@ -157,34 +229,12 @@ services:
         superset run -p 8088 --with-threads --reload --debugger
       "
 
-  jupyter:
-    image: jupyter/pyspark-notebook:latest
-    container_name: jupyter
-    profiles: [tools]
-    mem_limit: 2g
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./notebooks:/home/jovyan/work
-      - ./airflow/data/delta:/home/jovyan/delta
-    environment:
-      JUPYTER_ENABLE_LAB: "yes"
-      PIPELINE_DB_HOST: ${PIPELINE_DB_HOST}
-      PIPELINE_DB_PORT: ${PIPELINE_DB_PORT}
-      PIPELINE_DB_NAME: ${PIPELINE_DB_NAME}
-      PIPELINE_DB_USER: ${PIPELINE_DB_USER}
-      PIPELINE_DB_PASSWORD: ${PIPELINE_DB_PASSWORD}
-    networks:
-      - taxi_net
-    depends_on:
-      pipeline_db:
-        condition: service_healthy
-
 networks:
-  taxi_net:
+  pipeline_net:
     driver: bridge
 
 volumes:
+  postgres_data:
   airflow_db_data:
-  pipeline_db_data:
+  airflow_logs:
   superset_data:
