@@ -11,10 +11,13 @@ WITH source AS (
     SELECT *
     FROM {{ ref('stg_trips') }}
     {% if is_incremental() %}
-        WHERE partition_date > (  -- noqa: RF02
-            SELECT COALESCE(MAX(partition_date), CAST('1900-01-01' AS date))
+        WHERE partition_date > ( -- noqa: RF02
+            SELECT
+                COALESCE(
+                    MAX(partition_date),
+                    CAST('1900-01-01' AS date)
+                )
             FROM {{ this }}
-
         )
     {% endif %}
 ),
