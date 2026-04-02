@@ -72,7 +72,10 @@ jobs:
         run: pip install sqlfluff==3.4.0
 
       - name: SQLFluff lint
-        run: sqlfluff lint dbt/models/ --dialect postgres --config dbt/.sqlfluff
+        run: |
+         cd dbt
+          sqlfluff lint models/ --dialect postgres --config .sqlfluff
+        working-directory: ${{ github.workspace }}
 
   # -------------------------------------------------------------------------
   # Job 3: Test — Python 3.11 (matches Spark Docker images)

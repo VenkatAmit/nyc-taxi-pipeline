@@ -11,13 +11,13 @@ Commands
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 import typer
+from pipeline.exceptions import OrchestratorError
 
 from cli.airflow_client import AirflowClient
-from pipeline.exceptions import OrchestratorError
 
 run_app = typer.Typer(help="Trigger pipeline DAG runs", no_args_is_help=True)
 
@@ -31,7 +31,7 @@ def _format_date(date_str: str | None) -> str | None:
     if date_str is None:
         return None
     try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
         return dt.isoformat()
     except ValueError:
         typer.echo(f"Invalid date format: {date_str!r} — expected YYYY-MM-DD", err=True)
@@ -97,7 +97,9 @@ def run_gold(
     ] = False,
     skip_bronze_check: Annotated[
         bool,
-        typer.Option("--skip-bronze-check", help="Skip checking bronze succeeded first"),
+        typer.Option(
+            "--skip-bronze-check", help="Skip checking bronze succeeded first"
+        ),
     ] = False,
 ) -> None:
     """Trigger the gold loader DAG.
@@ -155,7 +157,9 @@ def run_all(
 
             bronze_state = _poll_until_done(client, _BRONZE_DAG, bronze_run_id)
             if bronze_state != "success":
-                typer.secho(f"Bronze failed ({bronze_state}) — aborting.", fg=typer.colors.RED)
+                typer.secho(
+                    f"Bronze failed ({bronze_state}) — aborting.", fg=typer.colors.RED
+                )
                 raise typer.Exit(code=1)
             typer.secho("Bronze succeeded.", fg=typer.colors.GREEN)
 

@@ -34,9 +34,10 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Sequence
+from typing import Any
 
 from pipeline.exceptions import (
     ConfigurationError,
@@ -219,8 +220,8 @@ class TripsDateRangeExpectation(Expectation):
             )
 
         # Build month boundaries
-        from datetime import datetime
         import calendar
+        from datetime import datetime
 
         year, month = partition_date.year, partition_date.month
         last_day = calendar.monthrange(year, month)[1]
@@ -279,9 +280,7 @@ DEFAULT_TRIPS_EXPECTATIONS: tuple[Expectation, ...] = (
     TripsDateRangeExpectation(),
 )
 
-DEFAULT_ZONES_EXPECTATIONS: tuple[Expectation, ...] = (
-    ZonesLocationIdExpectation(),
-)
+DEFAULT_ZONES_EXPECTATIONS: tuple[Expectation, ...] = (ZonesLocationIdExpectation(),)
 
 
 # ---------------------------------------------------------------------------
@@ -493,8 +492,7 @@ class GXValidator:
             # Build a batch query — filter by partition_date if provided
             if partition_date is not None:
                 query = (
-                    f"SELECT * FROM {table} "
-                    f"WHERE partition_date = '{partition_date}'"
+                    f"SELECT * FROM {table} WHERE partition_date = '{partition_date}'"
                 )
             else:
                 query = f"SELECT * FROM {table}"

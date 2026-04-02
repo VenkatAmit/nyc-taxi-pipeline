@@ -27,10 +27,11 @@ Design
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Final, Iterator, Sequence
+from typing import Final
 
 import psycopg
 from psycopg import Connection
@@ -421,9 +422,7 @@ class BronzeIngestor:
     ) -> None:
         with conn.cursor() as cur:
             cur.execute(f"DROP TABLE IF EXISTS {staging}")
-            cur.execute(
-                f"CREATE TEMP TABLE {staging} (LIKE {like} INCLUDING ALL)"
-            )
+            cur.execute(f"CREATE TEMP TABLE {staging} (LIKE {like} INCLUDING ALL)")
 
     @staticmethod
     def _iter_trips_rows(
@@ -491,8 +490,4 @@ class BronzeIngestor:
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (
-            f"BronzeIngestor("
-            f"host={self._settings.host!r}, "
-            f"db={self._settings.db!r})"
-        )
+        return f"BronzeIngestor(host={self._settings.host!r}, db={self._settings.db!r})"

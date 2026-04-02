@@ -21,11 +21,10 @@ Design rules
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.sensors.external_task import ExternalTaskSensor
-
 from pipeline.gold.loader import GoldLoader
 from pipeline.gold.run_logger import RunLogger, RunRecord, RunStatus
 from pipeline.settings import get_settings
@@ -59,7 +58,7 @@ def _partition_date(logical_date: datetime) -> date:
     dag_id="gold_dag",
     description="Load business-ready Delta Lake gold tables from Postgres silver",
     schedule="0 8 * * *",
-    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    start_date=datetime(2024, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
     default_args=_DEFAULT_ARGS,
@@ -89,7 +88,7 @@ def gold_dag() -> None:
         assert run_id is not None
 
         partition = _partition_date(logical_date)
-        started_at = datetime.now(tz=timezone.utc)
+        started_at = datetime.now(tz=UTC)
 
         logger.info("Loading fact_trips for partition %s", partition)
 
@@ -113,7 +112,7 @@ def gold_dag() -> None:
         try:
             rows_written = loader.load_fact_trips(partition_date=partition)
             status = RunStatus.SUCCESS
-            finished_at = datetime.now(tz=timezone.utc)
+            finished_at = datetime.now(tz=UTC)
             duration = (finished_at - started_at).total_seconds()
 
             run_logger.log(
@@ -144,7 +143,7 @@ def gold_dag() -> None:
             }
 
         except Exception as exc:
-            finished_at = datetime.now(tz=timezone.utc)
+            finished_at = datetime.now(tz=UTC)
             run_logger.log(
                 RunRecord(
                     run_id=run_id,
@@ -169,7 +168,7 @@ def gold_dag() -> None:
         """Load silver_zones into dim_zones Delta table (full refresh)."""
         assert run_id is not None
 
-        started_at = datetime.now(tz=timezone.utc)
+        started_at = datetime.now(tz=UTC)
         logger.info("Loading dim_zones (full refresh)")
 
         loader = GoldLoader()
@@ -188,7 +187,7 @@ def gold_dag() -> None:
 
         try:
             rows_written = loader.load_dim_zones()
-            finished_at = datetime.now(tz=timezone.utc)
+            finished_at = datetime.now(tz=UTC)
             duration = (finished_at - started_at).total_seconds()
 
             run_logger.log(
@@ -212,7 +211,7 @@ def gold_dag() -> None:
             }
 
         except Exception as exc:
-            finished_at = datetime.now(tz=timezone.utc)
+            finished_at = datetime.now(tz=UTC)
             run_logger.log(
                 RunRecord(
                     run_id=run_id,

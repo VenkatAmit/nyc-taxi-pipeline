@@ -51,7 +51,7 @@ _DELTA_CATALOG = "spark.sql.catalog.spark_catalog"
 _DELTA_CATALOG_IMPL = "org.apache.spark.sql.delta.catalog.DeltaCatalog"
 
 
-def _build_spark_session(settings: SparkSettings) -> "SparkSession":
+def _build_spark_session(settings: SparkSettings) -> SparkSession:
     """Construct and configure a SparkSession.
 
     Separated from the cached wrapper so tests can call this directly
@@ -138,7 +138,7 @@ def _build_spark_session(settings: SparkSettings) -> "SparkSession":
 
 
 @lru_cache(maxsize=1)
-def get_spark(settings: SparkSettings | None = None) -> "SparkSession":
+def get_spark(settings: SparkSettings | None = None) -> SparkSession:
     """Return the singleton SparkSession for this process.
 
     Parameters

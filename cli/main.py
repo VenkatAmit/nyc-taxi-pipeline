@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import typer
 
-from cli.commands.run import run_app
-from cli.commands.status import status_app
 from cli.commands.backfill import backfill_app
 from cli.commands.logs import logs_app
+from cli.commands.run import run_app
+from cli.commands.status import status_app
 
 app = typer.Typer(
     name="cab",
