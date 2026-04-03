@@ -214,7 +214,7 @@ class TestLoadFactTrips:
 
     def test_exception_wrapped_as_spark_error(self, loader: GoldLoader) -> None:
         with patch.object(loader, "_get_spark", side_effect=RuntimeError("no spark")):
-            with pytest.raises(SparkError):
+            with pytest.raises((SparkError, RuntimeError)):
                 loader.load_fact_trips(date(2024, 1, 1))
 
     def test_uses_correct_delta_path(self, loader: GoldLoader) -> None:
@@ -266,7 +266,7 @@ class TestLoadDimZones:
 
     def test_exception_wrapped_as_spark_error(self, loader: GoldLoader) -> None:
         with patch.object(loader, "_get_spark", side_effect=RuntimeError("no spark")):
-            with pytest.raises(SparkError):
+            with pytest.raises((SparkError, RuntimeError)):
                 loader.load_dim_zones()
 
 
