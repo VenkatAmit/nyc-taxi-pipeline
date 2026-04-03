@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.bronze
+#
+# Slim bronze worker image — no JVM, no Spark.
+#
+# Build:
+#   docker build -f docker/Dockerfile.bronze -t cab-pipeline-bronze .
+# ---------------------------------------------------------------------------
+
+FROM python:3.11-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM base AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock LICENSE ./
+
+RUN uv sync --frozen --no-dev --no-extra spark
+
+FROM base AS runtime
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+
+COPY pipeline/ ./pipeline/
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app" \
+    PYTHONUNBUFFERED="1" \
+    PYTHONDONTWRITEBYTECODE="1"
+
+RUN useradd --no-create-home --shell /bin/false appuser
+USER appuser
+
+CMD ["python", "-m", "pipeline.bronze"]
