@@ -46,3 +46,6 @@ uv.lock.readme
 logs/
 great_expectations/reports/
 .env
+airflow/data/
+airflow/logs/
+airflow/tasks/
