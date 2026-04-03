@@ -14,7 +14,7 @@ WITH source AS (
         WHERE partition_date > ( -- noqa: RF02
             SELECT
                 COALESCE(
-                    MAX(partition_date),
+                    MAX(partition_date), -- noqa: RF02
                     CAST('1900-01-01' AS date)
                 )
             FROM {{ this }}
