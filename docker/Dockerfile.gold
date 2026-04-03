@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.gold
+#
+# Gold worker image — PySpark + Delta Lake + Postgres JDBC driver.
+# Responsible for:
+#   - Reading silver data from Postgres via partitioned JDBC
+#   - Writing business-ready gold tables to Delta Lake
+#
+# Build:
+#   docker build -f docker/Dockerfile.gold -t cab-pipeline-gold .
+#
+# Run:
+#   docker run --env-file .env cab-pipeline-gold
+# ---------------------------------------------------------------------------
+
+    FROM python:3.11-slim AS base
+
+    # Java is required for PySpark
+    RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-17-jre-headless \
+        libpq-dev \
+        build-essential \
+        curl \
+        && rm -rf /var/lib/apt/lists/*
+
+    ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+    # ---------------------------------------------------------------------------
+    # Builder stage
+    # ---------------------------------------------------------------------------
+    FROM base AS builder
+
+    COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+
+    WORKDIR /app
+
+    COPY pyproject.toml uv.lock ./
+
+    # Install with the [spark] extra — this pulls in pyspark + delta-spark
+    RUN uv sync --frozen --no-dev --extra spark
+
+    # ---------------------------------------------------------------------------
+    # JDBC driver
+    # Download the Postgres JDBC jar — not pip-installable, must be added
+    # to $SPARK_HOME/jars/ so Spark finds it at session startup.
+    #
+    # Pin the version to match your Postgres server major version.
+    # Check for latest at: https://jdbc.postgresql.org/download/
+    # ---------------------------------------------------------------------------
+    ARG JDBC_VERSION=42.7.3
+    RUN curl -fsSL \
+        "https://jdbc.postgresql.org/download/postgresql-${JDBC_VERSION}.jar" \
+        -o /app/postgresql-jdbc.jar
+
+    # ---------------------------------------------------------------------------
+    # Runtime stage
+    # ---------------------------------------------------------------------------
+    FROM base AS runtime
+
+    WORKDIR /app
+
+    # Python virtualenv from builder
+    COPY --from=builder /app/.venv /app/.venv
+
+    # JDBC jar — placed where Spark's default jars directory is expected
+    COPY --from=builder /app/postgresql-jdbc.jar /app/.venv/lib/python3.11/site-packages/pyspark/jars/
+
+    # Application source
+    COPY pipeline/ ./pipeline/
+
+    ENV PATH="/app/.venv/bin:$PATH" \
+        PYTHONPATH="/app" \
+        PYTHONUNBUFFERED="1" \
+        PYTHONDONTWRITEBYTECODE="1" \
+        # Tell PySpark where Java lives
+        JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+        # Suppress PySpark's verbose startup banner
+        PYSPARK_PYTHON=python3 \
+        SPARK_LOCAL_DIRS=/tmp/spark
+
+    RUN useradd --no-create-home --shell /bin/false appuser
+    USER appuser
+
+    CMD ["python", "-m", "pipeline.gold"]
