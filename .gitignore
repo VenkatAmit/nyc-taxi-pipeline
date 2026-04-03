@@ -49,3 +49,8 @@ great_expectations/reports/
 airflow/data/
 airflow/logs/
 airflow/tasks/
+great_expectations/reports/
+dbt/logs/
+logs/
+dbt/.user.yml
+**/.DS_Store
