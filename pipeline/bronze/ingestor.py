@@ -312,7 +312,7 @@ class BronzeIngestor:
     def _csv_columns(path: Path) -> list[str]:
         with path.open() as f:
             header = f.readline().strip()
-        return [col.strip() for col in header.split(",")]
+        return [col.strip().strip('"') for col in header.split(",")]
 
     @staticmethod
     def _validate_schema(
