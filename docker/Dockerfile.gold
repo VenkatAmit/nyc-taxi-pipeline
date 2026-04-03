@@ -73,7 +73,7 @@
         PYTHONUNBUFFERED="1" \
         PYTHONDONTWRITEBYTECODE="1" \
         # Tell PySpark where Java lives
-        JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+        JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64\
         # Suppress PySpark's verbose startup banner
         PYSPARK_PYTHON=python3 \
         SPARK_LOCAL_DIRS=/tmp/spark
