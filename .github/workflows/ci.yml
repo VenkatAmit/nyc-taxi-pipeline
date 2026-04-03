@@ -277,7 +277,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/Dockerfile.bronze    # ← add ./
+          file: docker/Dockerfile.bronze
           push: false
           tags: cab-pipeline-bronze:${{ github.sha }}
           cache-from: type=gha
@@ -302,7 +302,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/Dockerfile.gold
+          file: docker/Dockerfile.gold
           push: false
           tags: cab-pipeline-gold:${{ github.sha }}
           cache-from: type=gha
