@@ -16,8 +16,8 @@ Design rules
 
 Schedule
 --------
-Daily at 06:00 UTC — source files for the previous day are
-typically available by 05:00 UTC.
+Monthly at 06:00 UTC on the first day of the month, which gives us a consistent partition date of the first day of the month (e.g. 2024-01-01) and allows time for source files to arrive after the end of the month. Airflow cron syntax: "0 6 1 * *"
+
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _partition_date(logical_date: datetime) -> date:
 @dag(
     dag_id="bronze_dag",
     description="Ingest raw NYC taxi data into Postgres bronze tables",
-    schedule="0 6 * * *",
+    schedule="0 6 1 * *",
     start_date=datetime(2024, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
@@ -188,8 +188,7 @@ def bronze_dag() -> None:
     run_silver = BashOperator(
         task_id="run_silver_dbt",
         bash_command=(
-            "cd {{ var.value.get('dbt_project_dir', '/app/dbt') }} "
-            "&& dbt run --select silver.* --profiles-dir ."
+            "cd /opt/airflow/dbt && dbt run --select staging.* silver.* --profiles-dir ."
         ),
         retries=1,
     )
@@ -197,7 +196,7 @@ def bronze_dag() -> None:
     test_silver = BashOperator(
         task_id="test_silver_dbt",
         bash_command=(
-            "cd {{ var.value.get('dbt_project_dir', '/app/dbt') }} "
+            "cd /opt/airflow/dbt "
             "&& dbt test --select silver.* --profiles-dir ."
         ),
         retries=0,

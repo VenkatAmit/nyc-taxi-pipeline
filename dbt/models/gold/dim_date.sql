@@ -26,7 +26,7 @@ SELECT  -- noqa: ST06
 
 FROM (
     SELECT DISTINCT DATE_TRUNC('hour', pickup_datetime) AS hour_bucket
-    FROM {{ source('silver', 'cleaned_trips') }}
+    FROM {{ ref('silver_trips') }}
     WHERE pickup_datetime IS NOT NULL
 ) AS hours
 ORDER BY date_key

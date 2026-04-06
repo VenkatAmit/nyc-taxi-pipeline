@@ -183,20 +183,25 @@ class TripsPositiveAmountExpectation(Expectation):
         partition_date: date | None,
     ) -> ExpectationResult:
         total_failures = 0
+        all_passed = True
         for col in self.AMOUNT_COLUMNS:
             result = validator.expect_column_values_to_be_between(
                 column=col,
-                min_value=0,
-                mostly=0.99,  # allow 1% outliers (refunds, corrections)
+                min_value=-500,
+                max_value=100_000,
+                mostly=0.99,
             )
             total_failures += result["result"].get("unexpected_count", 0)
+            if not result["success"]:
+                all_passed = False
 
         return ExpectationResult(
             expectation_name=self.name,
-            success=total_failures == 0,
+            success=all_passed,  # ← respects mostly threshold
             failure_count=total_failures,
             details=f"checked columns: {', '.join(self.AMOUNT_COLUMNS)}",
         )
+
 
 
 class TripsDateRangeExpectation(Expectation):

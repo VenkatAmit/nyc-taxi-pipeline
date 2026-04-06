@@ -42,11 +42,12 @@ x-airflow-common:
     #python
     PYTHONPATH: "/opt/airflow"
     #PIP ADDITIONAL REQUIREMENTS
-    _PIP_ADDITIONAL_REQUIREMENTS: "psycopg[binary]>=3.2 pydantic-settings>=2.3 great-expectations>=0.18"
+    _PIP_ADDITIONAL_REQUIREMENTS: "psycopg[binary]>=3.2 pydantic-settings>=2.3 great-expectations==0.18.19 dbt-postgres==1.7.18"
   volumes:
     - ./dags:/opt/airflow/dags
     - ./dbt:/opt/airflow/dbt
     - ./pipeline:/opt/airflow/pipeline
+    - ./data:/data
     - airflow_logs:/opt/airflow/logs
   depends_on:
     airflow_db:

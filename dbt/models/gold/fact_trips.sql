@@ -7,7 +7,7 @@ WITH trips AS (
             TO_CHAR(pickup_datetime, 'YYYYMMDD')
             || LPAD(EXTRACT(HOUR FROM pickup_datetime)::TEXT, 2, '0')
         )::BIGINT AS pickup_date_key
-    FROM {{ source('silver', 'cleaned_trips') }}
+    FROM {{ ref('silver_trips') }}
 ),
 
 date_dim AS (

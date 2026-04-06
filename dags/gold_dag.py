@@ -58,7 +58,7 @@ def _partition_date(logical_date: datetime) -> date:
 @dag(
     dag_id="gold_dag",
     description="Load business-ready Delta Lake gold tables from Postgres silver",
-    schedule="0 8 * * *",
+    schedule="0 8 1 * *",
     start_date=datetime(2024, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
@@ -73,7 +73,7 @@ def gold_dag() -> None:
         external_dag_id="bronze_dag",
         external_task_id=None,  # wait for the whole DAG
         allowed_states=["success"],
-        failed_states=["failed", "upstream_failed"],
+        failed_states=["failed"],
         timeout=3600,
         poke_interval=60,
         mode="reschedule",

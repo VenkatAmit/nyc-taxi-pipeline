@@ -45,7 +45,18 @@ enriched AS (
             || '|'
             || COALESCE(CAST(pickup_datetime AS varchar), '_null_')
             || '|'
+            || COALESCE(CAST(dropoff_datetime AS varchar), '_null_')
+            || '|'
             || COALESCE(CAST(pu_location_id AS varchar), '_null_')
+            || '|'
+            || COALESCE(CAST(do_location_id AS varchar), '_null_')
+            || '|'
+            || COALESCE(CAST(fare_amount AS varchar), '_null_')
+            || '|'
+            || CAST(ROW_NUMBER() OVER (
+                PARTITION BY vendor_id, pickup_datetime, pu_location_id
+                ORDER BY dropoff_datetime, fare_amount
+            ) AS varchar)
         ) AS trip_id,
         CASE
             WHEN trip_distance > 0
