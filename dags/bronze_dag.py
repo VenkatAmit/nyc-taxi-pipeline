@@ -16,8 +16,8 @@ Design rules
 
 Schedule
 --------
-Monthly at 06:00 UTC on the first day of the month, which gives us a consistent partition date of the first day of the month (e.g. 2024-01-01) and allows time for source files to arrive after the end of the month. Airflow cron syntax: "0 6 1 * *"
-
+Monthly at 06:00 UTC on the 1st of each month.
+Airflow cron: "0 6 1 * *"
 """
 
 from __future__ import annotations
@@ -188,7 +188,8 @@ def bronze_dag() -> None:
     run_silver = BashOperator(
         task_id="run_silver_dbt",
         bash_command=(
-            "cd /opt/airflow/dbt && dbt run --select staging.* silver.* --profiles-dir ."
+            "cd /opt/airflow/dbt "
+            "&& dbt run --select staging.* silver.* --profiles-dir ."
         ),
         retries=1,
     )
